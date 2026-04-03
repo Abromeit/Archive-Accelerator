@@ -96,10 +96,9 @@ export class SidebarPanel extends LitElement {
                             <div class="text-xs text-text-muted mb-1">
                                 ${this.pageInfo.documentCount} snapshots
                             </div>
-                            <div class="text-xs text-text-muted mb-2">
+                            <div class="text-xs text-text-muted">
                                 ${this.pageInfo.firstDate} — ${this.pageInfo.lastDate}
                             </div>
-                            <sync-button .currentUrl=${this.currentUrl}></sync-button>
                         </div>
                     `
                     : html``

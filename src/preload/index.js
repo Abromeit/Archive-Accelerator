@@ -1,9 +1,75 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('api', {
-    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    getAppVersion: function () {
+        return ipcRenderer.invoke('get-app-version');
+    },
 
-    onProviderAction: (callback) => {
-        ipcRenderer.on('provider-action', (_event, data) => callback(data));
+    getSnapshots: function (url) {
+        return ipcRenderer.invoke('get-snapshots', url);
+    },
+
+    getSnapshotContent: function (id) {
+        return ipcRenderer.invoke('get-snapshot-content', id);
+    },
+
+    getPageInfo: function (url) {
+        return ipcRenderer.invoke('get-page-info', url);
+    },
+
+    syncUrl: function (url) {
+        return ipcRenderer.invoke('sync-url', url);
+    },
+
+    onSyncProgress: function (callback) {
+        ipcRenderer.on('sync-progress', function (_event, data) {
+            callback(data);
+        });
+    },
+
+    getAnalyticsData: function (url) {
+        return ipcRenderer.invoke('get-analytics-data', url);
+    },
+
+    syncAnalytics: function (url) {
+        return ipcRenderer.invoke('sync-analytics', url);
+    },
+
+    getProviders: function () {
+        return ipcRenderer.invoke('get-providers');
+    },
+
+    connectProvider: function (id) {
+        return ipcRenderer.invoke('connect-provider', id);
+    },
+
+    disconnectProvider: function (id) {
+        return ipcRenderer.invoke('disconnect-provider', id);
+    },
+
+    getAvailableProperties: function () {
+        return ipcRenderer.invoke('get-available-properties');
+    },
+
+    selectProperty: function (siteUrl) {
+        return ipcRenderer.invoke('select-property', siteUrl);
+    },
+
+    getChartPreferences: function () {
+        return ipcRenderer.invoke('get-chart-preferences');
+    },
+
+    setChartPreferences: function (prefs) {
+        return ipcRenderer.invoke('set-chart-preferences', prefs);
+    },
+
+    getSnapshotDiffs: function (snapshotA, snapshotB) {
+        return ipcRenderer.invoke('get-snapshot-diffs', snapshotA, snapshotB);
+    },
+
+    onProviderAction: function (callback) {
+        ipcRenderer.on('provider-action', function (_event, data) {
+            callback(data);
+        });
     },
 });

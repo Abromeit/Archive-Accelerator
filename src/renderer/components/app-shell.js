@@ -10,6 +10,8 @@ export class AppShell extends LitElement {
         pageInfo: { type: Object },
         activeTab: { type: Number },
         hasData: { type: Boolean },
+        _syncing: { state: true },
+        _syncProgress: { state: true },
     };
 
     createRenderRoot() {
@@ -25,6 +27,8 @@ export class AppShell extends LitElement {
         this.pageInfo = null;
         this.activeTab = 0;
         this.hasData = false;
+        this._syncing = false;
+        this._syncProgress = null;
     }
 
     connectedCallback() {
@@ -79,6 +83,24 @@ export class AppShell extends LitElement {
         this.activeTab = e.detail.index;
     }
 
+    _handleSyncComplete() {
+        this._loadData(this.currentUrl);
+    }
+
+    async _handleSyncRequested() {
+        if (this._syncing || !this.currentUrl) return;
+        this._syncing = true;
+        this._syncProgress = { current: 0, total: 0, done: false };
+
+        await dataService.syncUrl(this.currentUrl, (p) => {
+            this._syncProgress = { ...p };
+        });
+
+        this._syncing = false;
+        this._syncProgress = null;
+        this._loadData(this.currentUrl);
+    }
+
     render() {
         return html`
             <div class="grid grid-cols-[280px_1fr] h-screen">
@@ -88,12 +110,16 @@ export class AppShell extends LitElement {
                     .selectedSnapshotId=${this.selectedSnapshot?.id}
                     .currentUrl=${this.currentUrl}
                     @snapshot-selected=${this._handleSnapshotSelected}
+                    @sync-complete=${this._handleSyncComplete}
                 ></sidebar-panel>
 
                 <div class="flex flex-col h-screen overflow-hidden" style="background: #1F1F1F">
                     <url-input
                         .value=${this.currentUrl}
+                        .syncing=${this._syncing}
+                        .progress=${this._syncProgress}
                         @url-changed=${this._handleUrlChanged}
+                        @sync-requested=${this._handleSyncRequested}
                     ></url-input>
 
                     ${this.hasData

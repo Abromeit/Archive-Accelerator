@@ -20,7 +20,8 @@ export class AnalyticsChart extends LitElement {
         this.currentUrl = '';
         this.snapshots = [];
         this._connected = false;
-        this._prefs = dataService.getChartPreferences();
+        this._prefs = { clicks: true, impressions: true, position: false };
+        this._loadPrefs();
         this._analyticsData = [];
         this._chart = null;
         this._resizeObserver = null;
@@ -45,8 +46,12 @@ export class AnalyticsChart extends LitElement {
         }
     }
 
-    _checkConnection() {
-        const providers = dataService.getConnectedProviders();
+    async _loadPrefs() {
+        this._prefs = await dataService.getChartPreferences();
+    }
+
+    async _checkConnection() {
+        const providers = await dataService.getConnectedProviders();
         this._connected = providers.some((p) => p.connected);
     }
 

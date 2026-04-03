@@ -3,6 +3,8 @@ import { LitElement, html } from 'lit';
 export class UrlInput extends LitElement {
     static properties = {
         value: { type: String },
+        syncing: { type: Boolean },
+        progress: { type: Object },
     };
 
     createRenderRoot() {
@@ -12,6 +14,8 @@ export class UrlInput extends LitElement {
     constructor() {
         super();
         this.value = '';
+        this.syncing = false;
+        this.progress = null;
     }
 
     _handleKeyDown(e) {
@@ -31,6 +35,14 @@ export class UrlInput extends LitElement {
         if (!url) return;
         this.dispatchEvent(new CustomEvent('url-changed', {
             detail: { url },
+            bubbles: true,
+            composed: true,
+        }));
+    }
+
+    _handleSyncClick() {
+        if (this.syncing) return;
+        this.dispatchEvent(new CustomEvent('sync-requested', {
             bubbles: true,
             composed: true,
         }));
@@ -57,6 +69,34 @@ export class UrlInput extends LitElement {
                         @keydown=${this._handleKeyDown}
                         @blur=${this._handleBlur}
                     />
+                    <button
+                        class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium
+                               transition-colors duration-150 flex-shrink-0
+                               ${this.syncing
+                                   ? 'bg-surface-3 text-text-muted cursor-wait'
+                                   : 'bg-accent-green/20 text-accent-green hover:bg-accent-green/30 cursor-pointer'
+                               }"
+                        @click=${this._handleSyncClick}
+                        ?disabled=${this.syncing}
+                    >
+                        ${this.syncing
+                            ? html`
+                                <svg class="animate-spin" width="14" height="14" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                                </svg>
+                                <span>${this.progress?.current ?? 0} / ${this.progress?.total ?? 0}</span>
+                            `
+                            : html`
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                     stroke="currentColor" stroke-width="2">
+                                    <path d="M23 4v6h-6M1 20v-6h6" />
+                                    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+                                </svg>
+                                <span>Sync</span>
+                            `
+                        }
+                    </button>
                 </div>
             </div>
         `;

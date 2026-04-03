@@ -1,8 +1,11 @@
 import { LitElement, html } from 'lit';
+import { getSnapshotContent } from '../services/data-service.js';
 
 export class HtmlViewer extends LitElement {
     static properties = {
         snapshot: { type: Object },
+        _htmlContent: { state: true },
+        _loading: { state: true },
     };
 
     createRenderRoot() {
@@ -12,6 +15,34 @@ export class HtmlViewer extends LitElement {
     constructor() {
         super();
         this.snapshot = null;
+        this._htmlContent = null;
+        this._loading = false;
+        this._loadedId = null;
+    }
+
+    updated(changed) {
+        if (changed.has('snapshot')) {
+            this._loadContent();
+        }
+    }
+
+    async _loadContent() {
+        if (!this.snapshot || this.snapshot.id === this._loadedId) return;
+
+        this._loading = true;
+        this._htmlContent = null;
+        this._loadedId = this.snapshot.id;
+
+        try {
+            const content = await getSnapshotContent(this.snapshot.id);
+            if (this._loadedId === this.snapshot.id) {
+                this._htmlContent = content;
+            }
+        } catch (err) {
+            console.error('Failed to load snapshot HTML:', err);
+        } finally {
+            this._loading = false;
+        }
     }
 
     render() {
@@ -19,6 +50,19 @@ export class HtmlViewer extends LitElement {
             return html`
                 <div class="flex items-center justify-center h-full text-text-muted text-sm">
                     Select a snapshot to view its HTML content
+                </div>
+            `;
+        }
+
+        if (this._loading) {
+            return html`
+                <div class="h-full flex flex-col">
+                    <div class="text-xs text-text-muted mb-3">
+                        Snapshot from ${this.snapshot.date}
+                    </div>
+                    <div class="flex items-center justify-center flex-1 text-text-muted text-sm">
+                        Loading...
+                    </div>
                 </div>
             `;
         }
@@ -39,7 +83,7 @@ export class HtmlViewer extends LitElement {
         h1, h2, h3, h4, h5, h6 { color: #f5f5f5; }
     </style>
 </head>
-<body>${this.snapshot.htmlContent}</body>
+<body>${this._htmlContent || ''}</body>
 </html>`;
 
         return html`

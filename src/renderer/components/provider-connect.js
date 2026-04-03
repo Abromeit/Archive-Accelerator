@@ -12,7 +12,12 @@ export class ProviderConnect extends LitElement {
 
     constructor() {
         super();
-        this.providers = dataService.getConnectedProviders();
+        this.providers = [];
+        this._loadProviders();
+    }
+
+    async _loadProviders() {
+        this.providers = await dataService.getConnectedProviders();
     }
 
     async _handleConnect(providerId) {

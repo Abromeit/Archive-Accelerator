@@ -1,4 +1,7 @@
 import './index.css';
+import { initSyncProgressListener } from './services/data-service.js';
+
+initSyncProgressListener();
 
 import './components/app-shell.js';
 import './components/sidebar-panel.js';

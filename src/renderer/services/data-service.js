@@ -1,95 +1,71 @@
-import * as mock from './mock-data.js';
-
-const PREFS_KEY = 'archive-accelerator-chart-prefs';
-let providerState = structuredClone(mock.providers);
-
-
 export async function getSnapshots(url) {
-    if (url === mock.MOCK_URL) {
-        return structuredClone(mock.snapshots).reverse();
-    }
-    return [];
+    return await window.api.getSnapshots(url);
 }
 
 
 export async function getSnapshotContent(id) {
-    const snap = mock.snapshots.find((s) => s.id === id);
-    return snap ? structuredClone(snap) : null;
+    return await window.api.getSnapshotContent(id);
 }
 
 
 export async function getPageInfo(url) {
-    if (url === mock.MOCK_URL) {
-        return structuredClone(mock.pageInfo);
+    return await window.api.getPageInfo(url);
+}
+
+
+let _syncProgressCallback = null;
+
+export function initSyncProgressListener() {
+    if (window.api?.onSyncProgress) {
+        window.api.onSyncProgress(function (data) {
+            if (_syncProgressCallback) {
+                _syncProgressCallback(data);
+            }
+        });
     }
-    return null;
 }
 
 
 export async function syncUrl(url, onProgress) {
-    const total = 47;
-    let current = 0;
-
-    return new Promise((resolve) => {
-        const interval = setInterval(() => {
-            current += Math.ceil(Math.random() * 5);
-            if (current >= total) {
-                current = total;
-                clearInterval(interval);
-                onProgress({ current, total, done: true });
-                resolve({ current, total });
-                return;
-            }
-            onProgress({ current, total, done: false });
-        }, 300);
-    });
+    _syncProgressCallback = onProgress;
+    try {
+        return await window.api.syncUrl(url);
+    } finally {
+        _syncProgressCallback = null;
+    }
 }
 
 
 export async function getAnalyticsData(url) {
-    if (url === mock.MOCK_URL) {
-        return structuredClone(mock.analyticsData);
-    }
-    return [];
+    return await window.api.getAnalyticsData(url);
+}
+
+
+export async function syncAnalytics(url) {
+    return await window.api.syncAnalytics(url);
 }
 
 
 export function getConnectedProviders() {
-    return structuredClone(providerState);
+    return window.api.getProviders();
 }
 
 
 export async function connectProvider(id) {
-    const provider = providerState.find((p) => p.id === id);
-    if (provider) {
-        provider.connected = true;
-    }
-    return getConnectedProviders();
+    return await window.api.connectProvider(id);
 }
 
 
 export async function disconnectProvider(id) {
-    const provider = providerState.find((p) => p.id === id);
-    if (provider) {
-        provider.connected = false;
-    }
-    return getConnectedProviders();
+    return await window.api.disconnectProvider(id);
 }
 
 
-export function getChartPreferences() {
-    try {
-        const stored = localStorage.getItem(PREFS_KEY);
-        if (stored) {
-            return JSON.parse(stored);
-        }
-    } catch {
-        // ignore
-    }
-    return { clicks: true, impressions: true, position: false };
+export async function getChartPreferences() {
+    return await window.api.getChartPreferences();
 }
 
 
-export function setChartPreferences(prefs) {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+export async function setChartPreferences(prefs) {
+    return await window.api.setChartPreferences(prefs);
 }

@@ -2,7 +2,13 @@ import { defineConfig } from 'electron-vite';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-    main: {},
+    main: {
+        build: {
+            rollupOptions: {
+                external: ['better-sqlite3'],
+            },
+        },
+    },
     preload: {},
     renderer: {
         plugins: [

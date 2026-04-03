@@ -1,4 +1,6 @@
-import { Menu, app, shell } from 'electron';
+import { Menu, app, shell, dialog } from 'electron';
+import { startOAuthFlow, fetchAvailableProperties, selectProperty, hasCredentials } from './gsc-auth.js';
+import { disconnectProvider, getProvider } from './db.js';
 
 export function buildMenu(mainWindow) {
     const isMac = process.platform === 'darwin';
@@ -60,30 +62,58 @@ export function buildMenu(mainWindow) {
                     submenu: [
                         {
                             label: 'Connect...',
-                            click: () => {
-                                mainWindow.webContents.send('provider-action', {
-                                    provider: 'gsc',
-                                    action: 'connect',
-                                });
+                            click: async function () {
+                                if (!hasCredentials()) {
+                                    dialog.showErrorBox(
+                                        'Missing Credentials',
+                                        'GSC_CLIENT_ID and GSC_CLIENT_SECRET must be set in .env file.'
+                                    );
+                                    return;
+                                }
+                                try {
+                                    const result = await startOAuthFlow();
+                                    mainWindow.webContents.send('provider-action', {
+                                        provider: 'gsc',
+                                        action: 'connected',
+                                        properties: result.properties.map(function (p) { return p.siteUrl; }),
+                                        selectedProperty: result.selectedProperty,
+                                    });
+                                } catch (err) {
+                                    dialog.showErrorBox('Connection Failed', err.message);
+                                }
                             },
                         },
                         {
                             label: 'Disconnect',
-                            click: () => {
+                            click: function () {
+                                disconnectProvider('gsc');
                                 mainWindow.webContents.send('provider-action', {
                                     provider: 'gsc',
-                                    action: 'disconnect',
+                                    action: 'disconnected',
                                 });
                             },
                         },
                         { type: 'separator' },
                         {
                             label: 'Switch Property...',
-                            click: () => {
-                                mainWindow.webContents.send('provider-action', {
-                                    provider: 'gsc',
-                                    action: 'switch-property',
-                                });
+                            click: async function () {
+                                const provider = getProvider('gsc');
+                                if (!provider || !provider.connected) {
+                                    dialog.showErrorBox('Not Connected', 'Please connect GSC first.');
+                                    return;
+                                }
+                                try {
+                                    const properties = await fetchAvailableProperties();
+                                    const siteUrls = properties.map(function (p) { return p.siteUrl; });
+                                    mainWindow.webContents.send('provider-action', {
+                                        provider: 'gsc',
+                                        action: 'switch-property',
+                                        properties: siteUrls,
+                                        currentProperty: provider.property,
+                                    });
+                                } catch (err) {
+                                    dialog.showErrorBox('Error', err.message);
+                                }
                             },
                         },
                     ],
@@ -115,7 +145,9 @@ export function buildMenu(mainWindow) {
                 { type: 'separator' },
                 {
                     label: 'Learn More...',
-                    click: () => shell.openExternal('https://web.archive.org/'),
+                    click: function () {
+                        shell.openExternal('https://web.archive.org/');
+                    },
                 },
             ],
         },
