@@ -1,8 +1,8 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { join } from 'node:path';
 import { config } from 'dotenv';
 import { buildMenu } from './menu.js';
-import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getPageInfo, getAnalyticsData, getAllProviders, disconnectProvider, getSetting, setSetting } from './db.js';
+import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getPageInfo, getAnalyticsData, getAllProviders, disconnectProvider, getSetting, setSetting, deleteSnapshotsForUrl } from './db.js';
 import { decompressToString } from './compression.js';
 import { syncUrl } from './archive-sync.js';
 import { syncAnalytics } from './gsc-api.js';
@@ -189,4 +189,24 @@ ipcMain.handle('set-chart-preferences', function (_event, prefs) {
 
 ipcMain.handle('get-snapshot-diffs', function (_event, snapshotA, snapshotB) {
     return computeAllDiffs(snapshotA, snapshotB);
+});
+
+
+ipcMain.handle('confirm-delete-snapshots', async function (_event, url, count) {
+    const result = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Cancel', 'Delete'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Delete Snapshots',
+        message: `Delete all ${count} snapshots for this URL?`,
+        detail: url,
+    });
+    return result.response === 1;
+});
+
+
+ipcMain.handle('delete-snapshots-for-url', function (_event, url) {
+    deleteSnapshotsForUrl(url);
+    return { success: true };
 });

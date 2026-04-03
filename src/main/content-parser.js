@@ -34,7 +34,7 @@ export function extractTitle(html) {
     const head = getHead(html);
     const match = head.match(RE_TITLE);
     if (!match) return '';
-    return stripTags(match[1]).trim();
+    return decodeHtmlEntities(stripTags(match[1])).trim();
 }
 
 
@@ -45,7 +45,7 @@ export function extractMetaDescription(html) {
         match = head.match(RE_META_DESC_ALT);
     }
     if (!match) return '';
-    return match[1].trim();
+    return decodeHtmlEntities(match[1]).trim();
 }
 
 
@@ -130,6 +130,43 @@ const ENTITY_MAP = {
     '&#x27;': "'",
     '&apos;': "'",
     '&nbsp;': ' ',
+    '&bull;': '\u2022',
+    '&mdash;': '\u2014',
+    '&ndash;': '\u2013',
+    '&laquo;': '\u00AB',
+    '&raquo;': '\u00BB',
+    '&trade;': '\u2122',
+    '&reg;': '\u00AE',
+    '&copy;': '\u00A9',
+    '&hellip;': '\u2026',
+    '&middot;': '\u00B7',
+    '&lsquo;': '\u2018',
+    '&rsquo;': '\u2019',
+    '&ldquo;': '\u201C',
+    '&rdquo;': '\u201D',
+    '&eacute;': '\u00E9',
+    '&egrave;': '\u00E8',
+    '&uuml;': '\u00FC',
+    '&ouml;': '\u00F6',
+    '&auml;': '\u00E4',
+    '&szlig;': '\u00DF',
+    '&Auml;': '\u00C4',
+    '&Ouml;': '\u00D6',
+    '&Uuml;': '\u00DC',
+    '&euro;': '\u20AC',
+    '&pound;': '\u00A3',
+    '&yen;': '\u00A5',
+    '&cent;': '\u00A2',
+    '&times;': '\u00D7',
+    '&divide;': '\u00F7',
+    '&plusmn;': '\u00B1',
+    '&deg;': '\u00B0',
+    '&para;': '\u00B6',
+    '&sect;': '\u00A7',
+    '&larr;': '\u2190',
+    '&rarr;': '\u2192',
+    '&uarr;': '\u2191',
+    '&darr;': '\u2193',
 };
 
 const RE_ENTITY = /&(?:#(\d+)|#x([0-9a-fA-F]+)|(\w+));/g;

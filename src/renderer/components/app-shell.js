@@ -12,6 +12,7 @@ export class AppShell extends LitElement {
         hasData: { type: Boolean },
         _syncing: { state: true },
         _syncProgress: { state: true },
+        _filter: { state: true },
     };
 
     createRenderRoot() {
@@ -29,6 +30,7 @@ export class AppShell extends LitElement {
         this.hasData = false;
         this._syncing = false;
         this._syncProgress = null;
+        this._filter = 'all';
     }
 
     connectedCallback() {
@@ -67,8 +69,32 @@ export class AppShell extends LitElement {
 
     _selectSnapshot(snapshot) {
         this.selectedSnapshot = snapshot;
-        const idx = this.snapshots.findIndex((s) => s.id === snapshot.id);
-        this.comparisonSnapshot = idx < this.snapshots.length - 1 ? this.snapshots[idx + 1] : null;
+        this._updateComparisonSnapshot();
+    }
+
+    _updateComparisonSnapshot() {
+        if (!this.selectedSnapshot) {
+            this.comparisonSnapshot = null;
+            return;
+        }
+
+        const filtered = this._getFilteredSnapshots();
+        const idx = filtered.findIndex((s) => s.id === this.selectedSnapshot.id);
+        this.comparisonSnapshot = idx >= 0 && idx < filtered.length - 1 ? filtered[idx + 1] : null;
+    }
+
+    _getFilteredSnapshots() {
+        if (this._filter === 'all') return this.snapshots;
+
+        const predicates = {
+            template: (s) => s.templateChanged,
+            text: (s) => s.textChanged,
+            headlines: (s) => s.headlinesChanged,
+            meta: (s) => s.metaChanged,
+            title: (s) => s.titleChanged,
+        };
+
+        return this.snapshots.filter(predicates[this._filter] || (() => true));
     }
 
     _handleUrlChanged(e) {
@@ -81,6 +107,23 @@ export class AppShell extends LitElement {
 
     _handleTabChanged(e) {
         this.activeTab = e.detail.index;
+    }
+
+    _handleFilterChanged(e) {
+        this._filter = e.detail.filter;
+        this._updateComparisonSnapshot();
+    }
+
+    async _handleDeleteUrl() {
+        if (!this.currentUrl) return;
+        const confirmed = await window.api.confirmDeleteSnapshots(
+            this.currentUrl,
+            this.pageInfo?.documentCount ?? 0
+        );
+        if (!confirmed) return;
+
+        await window.api.deleteSnapshotsForUrl(this.currentUrl);
+        this._loadData(this.currentUrl);
     }
 
     _handleSyncComplete() {
@@ -111,6 +154,8 @@ export class AppShell extends LitElement {
                     .currentUrl=${this.currentUrl}
                     @snapshot-selected=${this._handleSnapshotSelected}
                     @sync-complete=${this._handleSyncComplete}
+                    @filter-changed=${this._handleFilterChanged}
+                    @delete-url-requested=${this._handleDeleteUrl}
                 ></sidebar-panel>
 
                 <div class="flex flex-col h-screen overflow-hidden" style="background: #1F1F1F">

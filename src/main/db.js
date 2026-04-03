@@ -230,6 +230,20 @@ export function setSetting(key, value) {
 }
 
 
+export function deleteSnapshotsForUrl(url) {
+    const tx = getDb().transaction(function () {
+        const ids = getDb().prepare('SELECT id FROM snapshots WHERE url = ?').all(url).map((r) => r.id);
+        if (ids.length > 0) {
+            const placeholders = ids.map(() => '?').join(',');
+            getDb().prepare(`DELETE FROM snapshot_diffs WHERE snapshot_id IN (${placeholders}) OR prev_snapshot_id IN (${placeholders})`).run(...ids, ...ids);
+        }
+        getDb().prepare('DELETE FROM snapshots WHERE url = ?').run(url);
+        getDb().prepare('DELETE FROM analytics_data WHERE url = ?').run(url);
+    });
+    tx();
+}
+
+
 export function getPageInfo(url) {
     const row = getDb().prepare(`
         SELECT

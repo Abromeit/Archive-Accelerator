@@ -67,6 +67,14 @@ contextBridge.exposeInMainWorld('api', {
         return ipcRenderer.invoke('get-snapshot-diffs', snapshotA, snapshotB);
     },
 
+    deleteSnapshotsForUrl: function (url) {
+        return ipcRenderer.invoke('delete-snapshots-for-url', url);
+    },
+
+    confirmDeleteSnapshots: function (url, count) {
+        return ipcRenderer.invoke('confirm-delete-snapshots', url, count);
+    },
+
     onProviderAction: function (callback) {
         ipcRenderer.on('provider-action', function (_event, data) {
             callback(data);

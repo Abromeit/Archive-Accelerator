@@ -158,7 +158,9 @@ export class SerpPreview extends LitElement {
 
                     <div style="font-family: 'Google Sans', Arial, sans-serif; font-size: 20px;
                                 color: rgb(153, 195, 255); line-height: 26px;
-                                margin-bottom: 4px;"
+                                margin-bottom: 4px; white-space: nowrap; overflow: hidden;
+                                text-overflow: ellipsis;"
+                         title="${snap.title || ''}"
                     >${title}</div>
 
                     <div style="font-family: Arial, sans-serif; font-size: 14px; color: rgb(191, 191, 191);
