@@ -89,6 +89,7 @@ export class AnalyticsChart extends LitElement {
 
         this._resizeObserver = new ResizeObserver(() => {
             this._chart?.resize();
+            this._drawChangeIcons();
         });
         this._resizeObserver.observe(container);
     }
@@ -146,7 +147,7 @@ export class AnalyticsChart extends LitElement {
                             { offset: 1, color: 'rgba(52, 211, 153, 0)' },
                         ]),
                     },
-                    markLine: series.length === 0 ? { data: markLineData, silent: true } : undefined,
+                    markLine: series.length === 0 ? { data: markLineData, silent: true, symbol: ['none', 'none'] } : undefined,
                 });
             }
 
@@ -166,7 +167,7 @@ export class AnalyticsChart extends LitElement {
                             { offset: 1, color: 'rgba(96, 165, 250, 0)' },
                         ]),
                     },
-                    markLine: series.length === 0 ? { data: markLineData, silent: true } : undefined,
+                    markLine: series.length === 0 ? { data: markLineData, silent: true, symbol: ['none', 'none'] } : undefined,
                 });
             }
 
@@ -180,44 +181,16 @@ export class AnalyticsChart extends LitElement {
                     symbol: 'none',
                     lineStyle: { color: '#fbbf24', width: 2 },
                     itemStyle: { color: '#fbbf24' },
-                    markLine: series.length === 0 ? { data: markLineData, silent: true } : undefined,
+                    markLine: series.length === 0 ? { data: markLineData, silent: true, symbol: ['none', 'none'] } : undefined,
                 });
             }
 
             if (series.length > 0 && !series.some((s) => s.markLine)) {
-                series[0].markLine = { data: markLineData, silent: true };
+                series[0].markLine = { data: markLineData, silent: true, symbol: ['none', 'none'] };
             }
 
-            const changeMarkers = changes
-                .filter((c) => dates.includes(c.date))
-                .map((c) => {
-                    const parts = [];
-                    if (c.templateChanged) parts.push('Template');
-                    if (c.headlinesChanged) parts.push('Headlines');
-                    else if (c.textChanged) parts.push('Text');
-                    if (c.titleChanged) parts.push('Title');
-                    else if (c.metaChanged) parts.push('Meta');
-                    return {
-                        coord: [c.date, 0],
-                        value: parts.join(', '),
-                        symbol: 'diamond',
-                        symbolSize: 8,
-                        itemStyle: {
-                            color: c.templateChanged ? '#fbbf24'
-                                : c.headlinesChanged ? '#60a5fa'
-                                : c.titleChanged ? '#c084fc'
-                                : c.textChanged ? '#60a5fa'
-                                : '#c084fc',
-                        },
-                    };
-                });
-
-            if (series.length > 0 && changeMarkers.length > 0) {
-                series[0].markPoint = {
-                    data: changeMarkers,
-                    label: { show: false },
-                };
-            }
+            const changeDates = changes.filter((c) => dates.includes(c.date));
+            this._pendingChangeIcons = changeDates.length > 0 ? { changeDates, dates } : null;
 
             const option = {
                 backgroundColor: 'transparent',
@@ -231,9 +204,9 @@ export class AnalyticsChart extends LitElement {
                     show: false,
                 },
                 grid: {
-                    top: 20,
+                    top: 30,
                     right: this._prefs.position ? 60 : 20,
-                    bottom: 40,
+                    bottom: 70,
                     left: 60,
                 },
                 xAxis: {
@@ -255,6 +228,7 @@ export class AnalyticsChart extends LitElement {
                         axisLine: { show: false },
                         axisLabel: { color: '#737373', fontSize: 10 },
                         splitLine: { lineStyle: { color: '#262626' } },
+                        min: 0,
                     },
                     {
                         type: 'value',
@@ -271,7 +245,147 @@ export class AnalyticsChart extends LitElement {
             };
 
             this._chart.setOption(option, true);
+            this._drawChangeIcons();
         });
+    }
+
+    _drawChangeIcons() {
+        if (!this._chart || !this._pendingChangeIcons) {
+            this._chart?.setOption({ graphic: [] }, { replaceMerge: ['graphic'] });
+            return;
+        }
+
+        const { changeDates, dates } = this._pendingChangeIcons;
+        const coordSys = this._chart.getModel().getSeriesByIndex(0)?.coordinateSystem;
+        if (!coordSys) return;
+
+        const container = this.querySelector('#analytics-chart-container');
+        let tooltipDiv = this.querySelector('#chart-icon-tooltip');
+        if (!tooltipDiv) {
+            tooltipDiv = document.createElement('div');
+            tooltipDiv.id = 'chart-icon-tooltip';
+            tooltipDiv.style.cssText = `
+                position: absolute; pointer-events: none; opacity: 0;
+                background: #262626; border: 1px solid #404040; color: #f5f5f5;
+                font-size: 11px; padding: 4px 8px; white-space: nowrap;
+                transition: opacity 0.1s; z-index: 200; line-height: 1.4;
+            `;
+            container.style.position = 'relative';
+            container.style.overflow = 'hidden';
+            container.appendChild(tooltipDiv);
+        }
+        const containerW = container.offsetWidth;
+
+        const S = 12;
+        const GAP = 2;
+        const GREEN = '#34d399';
+        const BG = '#1F1F1F';
+        const LABELS = {
+            template: 'template changed',
+            text: 'text changed',
+            headlines: 'text changed\nwith headlines',
+            meta: 'meta changed',
+            title: 'meta changed\nwith title tag',
+        };
+        const elements = [];
+
+        for (const c of changeDates) {
+            const catIdx = dates.indexOf(c.date);
+            if (catIdx === -1) continue;
+
+            const pt = coordSys.dataToPoint([catIdx, 0]);
+            const x = pt[0];
+            const baseY = pt[1];
+
+            const icons = [];
+            if (c.templateChanged) icons.push('template');
+            if (c.textChanged) icons.push(c.headlinesChanged ? 'headlines' : 'text');
+            if (c.metaChanged) icons.push(c.titleChanged ? 'title' : 'meta');
+
+            const totalW = icons.length * S + (icons.length - 1) * GAP;
+            let sx = x - totalW / 2;
+            const iconYOffset = 24;
+
+            for (const type of icons) {
+                const cx = sx + S / 2;
+                const cy = baseY + S / 2 + iconYOffset;
+                const h = S / 2;
+                const tipText = `${c.date}\n${LABELS[type]}`;
+                const children = [];
+
+                children.push({
+                    type: 'rect',
+                    shape: { x: cx - h - 2, y: cy - h - 2, width: S + 4, height: S + 4 },
+                    style: { fill: 'transparent' },
+                    z: 102,
+                    onmouseover: function () {
+                        tooltipDiv.textContent = '';
+                        tipText.split('\n').forEach(function (line, i) {
+                            if (i > 0) tooltipDiv.appendChild(document.createElement('br'));
+                            tooltipDiv.appendChild(document.createTextNode(line));
+                        });
+                        tooltipDiv.style.opacity = '0';
+                        tooltipDiv.style.left = '0px';
+                        tooltipDiv.style.top = '0px';
+                        tooltipDiv.style.display = 'block';
+
+                        requestAnimationFrame(function () {
+                            const tipW = tooltipDiv.offsetWidth;
+                            const tipH = tooltipDiv.offsetHeight;
+                            let left = cx - tipW / 2;
+                            if (left + tipW > containerW - 4) left = containerW - tipW - 4;
+                            if (left < 4) left = 4;
+                            const top = cy - h - tipH - 8;
+                            tooltipDiv.style.left = left + 'px';
+                            tooltipDiv.style.top = top + 'px';
+                            tooltipDiv.style.opacity = '1';
+                        });
+                    },
+                    onmouseout: function () {
+                        tooltipDiv.style.opacity = '0';
+                    },
+                });
+
+                if (type === 'template') {
+                    children.push(
+                        { type: 'rect', shape: { x: cx - h, y: cy - h, width: S, height: S, r: 1 }, style: { fill: 'none', stroke: GREEN, lineWidth: 1 }, z: 100 },
+                        { type: 'line', shape: { x1: cx - h, y1: cy - h + S * 0.31, x2: cx + h, y2: cy - h + S * 0.31 }, style: { stroke: GREEN, lineWidth: 1 }, z: 100 },
+                        { type: 'line', shape: { x1: cx - h + S * 0.31, y1: cy - h + S * 0.31, x2: cx - h + S * 0.31, y2: cy + h }, style: { stroke: GREEN, lineWidth: 1 }, z: 100 },
+                    );
+                } else if (type === 'text') {
+                    children.push(
+                        { type: 'rect', shape: { x: cx - h, y: cy - h, width: S, height: S, r: 1 }, style: { fill: 'none', stroke: GREEN, lineWidth: 1 }, z: 100 },
+                        { type: 'line', shape: { x1: cx - h + 2.5, y1: cy - 2.5, x2: cx + h - 2.5, y2: cy - 2.5 }, style: { stroke: GREEN, lineWidth: 1 }, z: 100 },
+                        { type: 'line', shape: { x1: cx - h + 2.5, y1: cy, x2: cx + h - 3.5, y2: cy }, style: { stroke: GREEN, lineWidth: 1 }, z: 100 },
+                        { type: 'line', shape: { x1: cx - h + 2.5, y1: cy + 2.5, x2: cx + h - 4.5, y2: cy + 2.5 }, style: { stroke: GREEN, lineWidth: 1 }, z: 100 },
+                    );
+                } else if (type === 'headlines') {
+                    children.push(
+                        { type: 'rect', shape: { x: cx - h, y: cy - h, width: S, height: S, r: 1 }, style: { fill: GREEN, stroke: 'none' }, z: 100 },
+                        { type: 'rect', shape: { x: cx - h + 2, y: cy - 3, width: S - 4, height: 1.8, r: 0.3 }, style: { fill: BG, stroke: 'none' }, z: 101 },
+                        { type: 'rect', shape: { x: cx - h + 2, y: cy - 0.5, width: S - 5.5, height: 1.4, r: 0.3 }, style: { fill: BG, stroke: 'none' }, z: 101 },
+                        { type: 'rect', shape: { x: cx - h + 2, y: cy + 2, width: S - 7, height: 1.4, r: 0.3 }, style: { fill: BG, stroke: 'none' }, z: 101 },
+                    );
+                } else if (type === 'meta') {
+                    children.push(
+                        { type: 'circle', shape: { cx, cy, r: h - 0.5 }, style: { fill: 'none', stroke: GREEN, lineWidth: 1 }, z: 100 },
+                        { type: 'polyline', shape: { points: [[cx - 2.5, cy - 2.5], [cx, cy], [cx - 2.5, cy + 2.5]] }, style: { fill: 'none', stroke: GREEN, lineWidth: 1 }, z: 100 },
+                        { type: 'line', shape: { x1: cx + 0.5, y1: cy + 2.5, x2: cx + 3, y2: cy + 2.5 }, style: { stroke: GREEN, lineWidth: 1 }, z: 100 },
+                    );
+                } else if (type === 'title') {
+                    children.push(
+                        { type: 'circle', shape: { cx, cy, r: h - 0.5 }, style: { fill: GREEN, stroke: 'none' }, z: 100 },
+                        { type: 'polyline', shape: { points: [[cx - 2.5, cy - 2.5], [cx, cy], [cx - 2.5, cy + 2.5]] }, style: { fill: 'none', stroke: BG, lineWidth: 1.2 }, z: 101 },
+                        { type: 'line', shape: { x1: cx + 0.5, y1: cy + 2.5, x2: cx + 3, y2: cy + 2.5 }, style: { stroke: BG, lineWidth: 1.2 }, z: 101 },
+                    );
+                }
+
+                elements.push({ type: 'group', children, z: 100 });
+                sx += S + GAP;
+            }
+        }
+
+        this._chart.setOption({ graphic: elements }, { replaceMerge: ['graphic'] });
     }
 
     render() {
