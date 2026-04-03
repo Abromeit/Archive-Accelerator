@@ -1,5 +1,5 @@
 import { LitElement, html } from 'lit';
-import { diffLines } from 'diff';
+import { diffWords } from 'diff';
 
 export class DiffViewer extends LitElement {
     static properties = {
@@ -38,7 +38,7 @@ export class DiffViewer extends LitElement {
     _computeDiff() {
         const oldText = this._getComparisonText();
         const newText = this.snapshot?.plaintext ?? '';
-        return diffLines(oldText, newText);
+        return diffWords(oldText, newText);
     }
 
     render() {
@@ -55,7 +55,6 @@ export class DiffViewer extends LitElement {
 
         return html`
             <div class="h-full flex flex-col">
-                <!-- Toggle bar -->
                 <div class="flex items-center gap-2 mb-4">
                     <span class="text-xs text-text-muted mr-2">Compare:</span>
                     <button
@@ -81,19 +80,18 @@ export class DiffViewer extends LitElement {
                     ${this.snapshot.date} vs ${this._getComparisonLabel()}
                 </div>
 
-                <!-- Diff output -->
-                <div class="flex-1 overflow-auto rounded-lg border border-surface-3 bg-surface-1">
-                    <pre class="p-4 text-sm font-mono leading-relaxed m-0"
+                <div class="flex-1 overflow-auto rounded-lg border border-surface-3 bg-surface-1 select-text">
+                    <div class="p-4 text-sm leading-relaxed"
                          style="white-space: pre-wrap; word-break: break-word;"
-                    >${parts.map((part) => {
+                    >${parts.map(function (part) {
                         if (part.added) {
-                            return html`<span class="bg-diff-added-bg text-diff-added block px-2">${part.value}</span>`;
+                            return html`<span style="background: rgba(46, 160, 67, 0.25); color: #7ee787; text-decoration: underline; text-decoration-color: rgba(46, 160, 67, 0.4); text-underline-offset: 2px;">${part.value}</span>`;
                         }
                         if (part.removed) {
-                            return html`<span class="bg-diff-removed-bg text-diff-removed block px-2">${part.value}</span>`;
+                            return html`<span style="background: rgba(248, 81, 73, 0.25); color: #ffa198; text-decoration: line-through; text-decoration-color: rgba(248, 81, 73, 0.4);">${part.value}</span>`;
                         }
-                        return html`<span class="text-text-secondary block px-2">${part.value}</span>`;
-                    })}</pre>
+                        return html`<span class="text-text-secondary">${part.value}</span>`;
+                    })}</div>
                 </div>
             </div>
         `;
