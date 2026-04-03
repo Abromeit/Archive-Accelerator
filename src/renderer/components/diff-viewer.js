@@ -83,7 +83,9 @@ export class DiffViewer extends LitElement {
 
                 <!-- Diff output -->
                 <div class="flex-1 overflow-auto rounded-lg border border-surface-3 bg-surface-1">
-                    <pre class="p-4 text-sm font-mono leading-relaxed m-0">${parts.map((part) => {
+                    <pre class="p-4 text-sm font-mono leading-relaxed m-0"
+                         style="white-space: pre-wrap; word-break: break-word;"
+                    >${parts.map((part) => {
                         if (part.added) {
                             return html`<span class="bg-diff-added-bg text-diff-added block px-2">${part.value}</span>`;
                         }

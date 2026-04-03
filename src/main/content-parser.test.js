@@ -1,0 +1,430 @@
+import { describe, it, expect } from 'vitest';
+import {
+    getHead,
+    getBody,
+    extractTitle,
+    extractMetaDescription,
+    extractPlaintext,
+    extractHeadlines,
+    extractClassesAndIds,
+    parseSnapshot,
+} from './content-parser.js';
+
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+const MINIMAL_PAGE = `<!DOCTYPE html><html><head>
+<title>Hello World</title>
+<meta name="description" content="A simple page">
+</head><body><p>Content here</p></body></html>`;
+
+const UNQUOTED_ATTRS_PAGE = `<!DOCTYPE html><html lang=de><head><meta charset=UTF-8>` +
+    `<meta name=viewport content="width=device-width, initial-scale=1, user-scalable=no">` +
+    `<title>SEO Agentur KOCH ESSEN &bull; Full-Service und SEO Beratung</title>` +
+    `<meta name=description content="Zuverlässige SEO-Agentur in Essen">` +
+    `</head><body><h1>Willkommen</h1><p>Text</p></body></html>`;
+
+const REAL_WORLD_KOCH_HEAD = `<!DOCTYPE html><html lang=de><head><meta charset=UTF-8>` +
+    `<meta name=viewport content="width=device-width, initial-scale=1, user-scalable=no">` +
+    `<meta name=mobile-web-app-capable content=yes>` +
+    `<meta name=apple-mobile-web-app-capable content=yes>` +
+    `<meta name=application-name content="KOCH ESSEN">` +
+    `<title>SEO Agentur KOCH ESSEN &bull; Full-Service und SEO Beratung</title>` +
+    `<script>var x = 1;</script>` +
+    ` <meta name=description content="Zuverlässige SEO-Agentur in Essen – SEO-Beratung, Strategie, Markenaufbau, Technical SEO – Wir sorgen dafür, dass Google Sie gut findet. Jetzt Anfragen!">` +
+    `<meta name=robots content="max-snippet:-1, max-image-preview:large, max-video-preview:-1">` +
+    `</head><body><h1>Main heading</h1><p>paragraph</p></body></html>`;
+
+const CONTENT_BEFORE_NAME = `<html><head>` +
+    `<meta content="Reversed order description" name="description">` +
+    `</head><body><p>Body</p></body></html>`;
+
+const SINGLE_QUOTED = `<html><head>` +
+    `<meta name='description' content='Single quoted desc'>` +
+    `<title>Single 'quoted' title</title>` +
+    `</head><body></body></html>`;
+
+const NO_META = `<html><head><title>No Meta</title></head><body><p>Just text</p></body></html>`;
+
+const NO_TITLE = `<html><head><meta name="description" content="Has desc"></head><body></body></html>`;
+
+const ENTITIES_IN_TITLE = `<html><head>` +
+    `<title>Company &amp; Co &ndash; Best &quot;Products&quot;</title>` +
+    `<meta name="description" content="&lt;strong&gt;Bold&lt;/strong&gt; &amp; more">` +
+    `</head><body></body></html>`;
+
+const COMPLEX_BODY = `<html><head><title>Test</title></head><body>` +
+    `<script>var x = "do not extract";</script>` +
+    `<style>.cls { color: red; }</style>` +
+    `<noscript><p>noscript content</p></noscript>` +
+    `<!-- This is a comment that should not appear -->` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M10 10 H 90 V 90 H 10 Z"/><text>svg text</text></svg>` +
+    `<h1>Main <strong>Title</strong></h1>` +
+    `<p>First paragraph.</p>` +
+    `<img src="photo.jpg" alt="A nice photo" />` +
+    `<h2>Subtitle</h2>` +
+    `<p>Second paragraph with &amp; entity.</p>` +
+    `<h3 class="small">Third level</h3>` +
+    `</body></html>`;
+
+const CLASSES_AND_IDS = `<html><head></head><body>` +
+    `<div class="container main-wrap" id="app">` +
+    `<nav class="nav primary-nav">` +
+    `<ul id="menu-list"><li class="nav">Item</li></ul>` +
+    `</nav></div></body></html>`;
+
+const NO_BODY_TAG = `<html><head><title>Headless</title>` +
+    `<meta name="description" content="Desc without body tag"></head>` +
+    `Some content without body tags`;
+
+const MULTILINE_META = `<html><head>
+<meta
+    name="description"
+    content="Multiline
+meta description value">
+<title>Multiline Test</title>
+</head><body></body></html>`;
+
+const META_IN_BODY = `<html><head><title>Head Title</title>` +
+    `<meta name="description" content="Head description">` +
+    `</head><body>` +
+    `<meta name="description" content="Body description should be ignored">` +
+    `<p>Content</p></body></html>`;
+
+const TITLE_IN_BODY = `<html><head>` +
+    `<meta name="description" content="desc">` +
+    `</head><body>` +
+    `<title>Body Title</title>` +
+    `<p>Content</p></body></html>`;
+
+const HEADLINES_NESTED = `<html><head></head><body>` +
+    `<h1><a href="/">Home <span>Page</span></a></h1>` +
+    `<h2>About <em>Us</em></h2>` +
+    `<h3>Sub &amp; Section</h3>` +
+    `<h4>Level 4</h4>` +
+    `<h5>Level 5</h5>` +
+    `<h6>Level 6</h6>` +
+    `</body></html>`;
+
+const EMPTY_HTML = '';
+
+const SELF_CLOSING_META = `<html><head>` +
+    `<meta name="description" content="Self closing" />` +
+    `<title>Self Closing</title>` +
+    `</head><body></body></html>`;
+
+
+// ---------------------------------------------------------------------------
+// getHead
+// ---------------------------------------------------------------------------
+
+describe('getHead', function () {
+    it('returns content before <body>', function () {
+        const head = getHead(MINIMAL_PAGE);
+        expect(head).toContain('<title>Hello World</title>');
+        expect(head).not.toContain('<p>Content here</p>');
+    });
+
+    it('returns full string when no <body> tag exists', function () {
+        expect(getHead(NO_BODY_TAG)).toBe(NO_BODY_TAG);
+    });
+
+    it('handles empty input', function () {
+        expect(getHead('')).toBe('');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// getBody
+// ---------------------------------------------------------------------------
+
+describe('getBody', function () {
+    it('returns content between <body> and </body>', function () {
+        const body = getBody(MINIMAL_PAGE);
+        expect(body).toContain('<p>Content here</p>');
+        expect(body).not.toContain('<title>');
+    });
+
+    it('returns content after <body> when no </body> exists', function () {
+        const html = '<html><head></head><body><p>Open body';
+        const body = getBody(html);
+        expect(body).toContain('<p>Open body');
+    });
+
+    it('returns full string when no <body> tag exists', function () {
+        expect(getBody(NO_BODY_TAG)).toBe(NO_BODY_TAG);
+    });
+
+    it('handles empty input', function () {
+        expect(getBody('')).toBe('');
+    });
+
+    it('handles body tag with attributes', function () {
+        const html = '<html><head></head><body class="dark" data-theme="night"><p>Hi</p></body></html>';
+        expect(getBody(html)).toBe('<p>Hi</p>');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// extractTitle
+// ---------------------------------------------------------------------------
+
+describe('extractTitle', function () {
+    it('extracts a basic title', function () {
+        expect(extractTitle(MINIMAL_PAGE)).toBe('Hello World');
+    });
+
+    it('decodes HTML entities in title', function () {
+        expect(extractTitle(UNQUOTED_ATTRS_PAGE)).toBe('SEO Agentur KOCH ESSEN \u2022 Full-Service und SEO Beratung');
+    });
+
+    it('decodes &amp;, &ndash;, &quot; in title', function () {
+        expect(extractTitle(ENTITIES_IN_TITLE)).toBe('Company & Co \u2013 Best "Products"');
+    });
+
+    it('returns empty string when no title exists', function () {
+        expect(extractTitle(NO_TITLE)).toBe('');
+    });
+
+    it('returns empty string for empty input', function () {
+        expect(extractTitle(EMPTY_HTML)).toBe('');
+    });
+
+    it('strips tags inside title element', function () {
+        const html = '<html><head><title>Bold <b>Title</b></title></head><body></body></html>';
+        expect(extractTitle(html)).toBe('Bold Title');
+    });
+
+    it('only extracts title from head, not body', function () {
+        expect(extractTitle(TITLE_IN_BODY)).toBe('');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// extractMetaDescription
+// ---------------------------------------------------------------------------
+
+describe('extractMetaDescription', function () {
+    it('extracts double-quoted meta description', function () {
+        expect(extractMetaDescription(MINIMAL_PAGE)).toBe('A simple page');
+    });
+
+    it('extracts meta description with unquoted name attribute', function () {
+        expect(extractMetaDescription(UNQUOTED_ATTRS_PAGE)).toBe('Zuverlässige SEO-Agentur in Essen');
+    });
+
+    it('extracts from real-world HTML with many meta tags before description', function () {
+        expect(extractMetaDescription(REAL_WORLD_KOCH_HEAD)).toBe(
+            'Zuverlässige SEO-Agentur in Essen \u2013 SEO-Beratung, Strategie, Markenaufbau, ' +
+            'Technical SEO \u2013 Wir sorgen dafür, dass Google Sie gut findet. Jetzt Anfragen!'
+        );
+    });
+
+    it('handles content before name (reversed attribute order)', function () {
+        expect(extractMetaDescription(CONTENT_BEFORE_NAME)).toBe('Reversed order description');
+    });
+
+    it('handles single-quoted attributes', function () {
+        expect(extractMetaDescription(SINGLE_QUOTED)).toBe('Single quoted desc');
+    });
+
+    it('handles self-closing meta tag', function () {
+        expect(extractMetaDescription(SELF_CLOSING_META)).toBe('Self closing');
+    });
+
+    it('returns empty string when no meta description exists', function () {
+        expect(extractMetaDescription(NO_META)).toBe('');
+    });
+
+    it('returns empty string for empty input', function () {
+        expect(extractMetaDescription(EMPTY_HTML)).toBe('');
+    });
+
+    it('decodes HTML entities in meta description', function () {
+        expect(extractMetaDescription(ENTITIES_IN_TITLE)).toBe('<strong>Bold</strong> & more');
+    });
+
+    it('handles multiline content attribute', function () {
+        expect(extractMetaDescription(MULTILINE_META)).toBe('Multiline\nmeta description value');
+    });
+
+    it('only extracts from head, not body', function () {
+        expect(extractMetaDescription(META_IN_BODY)).toBe('Head description');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// extractPlaintext
+// ---------------------------------------------------------------------------
+
+describe('extractPlaintext', function () {
+    it('extracts text content from body', function () {
+        expect(extractPlaintext(MINIMAL_PAGE)).toBe('Content here');
+    });
+
+    it('strips script, style, noscript, svg and comments', function () {
+        const text = extractPlaintext(COMPLEX_BODY);
+        expect(text).not.toContain('do not extract');
+        expect(text).not.toContain('color: red');
+        expect(text).not.toContain('noscript content');
+        expect(text).not.toContain('M10 10');
+        expect(text).not.toContain('svg text');
+        expect(text).not.toContain('comment that should not appear');
+    });
+
+    it('replaces img tags with alt text surrounded by spaces', function () {
+        const text = extractPlaintext(COMPLEX_BODY);
+        expect(text).toContain('A nice photo');
+    });
+
+    it('decodes HTML entities', function () {
+        const text = extractPlaintext(COMPLEX_BODY);
+        expect(text).toContain('&');
+        expect(text).not.toContain('&amp;');
+    });
+
+    it('collapses multiple spaces into one', function () {
+        const text = extractPlaintext(COMPLEX_BODY);
+        expect(text).not.toMatch(/  /);
+    });
+
+    it('does not include head content', function () {
+        const text = extractPlaintext(MINIMAL_PAGE);
+        expect(text).not.toContain('Hello World');
+    });
+
+    it('returns empty-ish for empty body', function () {
+        const html = '<html><head></head><body></body></html>';
+        expect(extractPlaintext(html).trim()).toBe('');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// extractHeadlines
+// ---------------------------------------------------------------------------
+
+describe('extractHeadlines', function () {
+    it('extracts all headline levels', function () {
+        const headlines = extractHeadlines(HEADLINES_NESTED);
+        expect(headlines).toHaveLength(6);
+        expect(headlines[0]).toEqual({ level: 1, text: 'Home Page' });
+        expect(headlines[1]).toEqual({ level: 2, text: 'About Us' });
+        expect(headlines[2]).toEqual({ level: 3, text: 'Sub & Section' });
+        expect(headlines[3]).toEqual({ level: 4, text: 'Level 4' });
+        expect(headlines[4]).toEqual({ level: 5, text: 'Level 5' });
+        expect(headlines[5]).toEqual({ level: 6, text: 'Level 6' });
+    });
+
+    it('extracts headlines from complex body', function () {
+        const headlines = extractHeadlines(COMPLEX_BODY);
+        expect(headlines).toHaveLength(3);
+        expect(headlines[0]).toEqual({ level: 1, text: 'Main Title' });
+        expect(headlines[1]).toEqual({ level: 2, text: 'Subtitle' });
+        expect(headlines[2]).toEqual({ level: 3, text: 'Third level' });
+    });
+
+    it('strips nested HTML tags from headline text', function () {
+        const headlines = extractHeadlines(HEADLINES_NESTED);
+        expect(headlines[0].text).toBe('Home Page');
+        expect(headlines[1].text).toBe('About Us');
+    });
+
+    it('returns empty array when no headlines', function () {
+        expect(extractHeadlines(MINIMAL_PAGE)).toEqual([]);
+    });
+
+    it('only extracts from body, not head', function () {
+        const html = '<html><head></head><body><h1>Real</h1></body></html>';
+        const headlines = extractHeadlines(html);
+        expect(headlines).toHaveLength(1);
+        expect(headlines[0].text).toBe('Real');
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// extractClassesAndIds
+// ---------------------------------------------------------------------------
+
+describe('extractClassesAndIds', function () {
+    it('extracts class names and IDs', function () {
+        const result = extractClassesAndIds(CLASSES_AND_IDS);
+        expect(result).toContain('container');
+        expect(result).toContain('main-wrap');
+        expect(result).toContain('nav');
+        expect(result).toContain('primary-nav');
+        expect(result).toContain('#app');
+        expect(result).toContain('#menu-list');
+    });
+
+    it('deduplicates class names', function () {
+        const result = extractClassesAndIds(CLASSES_AND_IDS);
+        const navCount = result.filter(function (x) { return x === 'nav'; }).length;
+        expect(navCount).toBe(1);
+    });
+
+    it('returns sorted array', function () {
+        const result = extractClassesAndIds(CLASSES_AND_IDS);
+        const sorted = [...result].sort();
+        expect(result).toEqual(sorted);
+    });
+
+    it('returns empty array for HTML without classes/ids', function () {
+        const html = '<html><body><p>Plain</p></body></html>';
+        expect(extractClassesAndIds(html)).toEqual([]);
+    });
+});
+
+
+// ---------------------------------------------------------------------------
+// parseSnapshot (integration)
+// ---------------------------------------------------------------------------
+
+describe('parseSnapshot', function () {
+    it('extracts all fields from a minimal page', function () {
+        const result = parseSnapshot(MINIMAL_PAGE);
+        expect(result.title).toBe('Hello World');
+        expect(result.meta_description).toBe('A simple page');
+        expect(result.plaintext).toBe('Content here');
+        expect(JSON.parse(result.headlines_json)).toEqual([]);
+        expect(JSON.parse(result.classes_ids_json)).toEqual([]);
+    });
+
+    it('extracts all fields from unquoted-attrs page', function () {
+        const result = parseSnapshot(UNQUOTED_ATTRS_PAGE);
+        expect(result.title).toBe('SEO Agentur KOCH ESSEN \u2022 Full-Service und SEO Beratung');
+        expect(result.meta_description).toBe('Zuverlässige SEO-Agentur in Essen');
+        expect(result.plaintext).toContain('Willkommen');
+        expect(result.plaintext).toContain('Text');
+        const headlines = JSON.parse(result.headlines_json);
+        expect(headlines).toHaveLength(1);
+        expect(headlines[0]).toEqual({ level: 1, text: 'Willkommen' });
+    });
+
+    it('extracts all fields from complex body', function () {
+        const result = parseSnapshot(COMPLEX_BODY);
+        expect(result.title).toBe('Test');
+        expect(result.plaintext).toContain('First paragraph');
+        expect(result.plaintext).toContain('A nice photo');
+        expect(result.plaintext).toContain('Second paragraph with & entity.');
+        expect(result.plaintext).not.toContain('do not extract');
+        const headlines = JSON.parse(result.headlines_json);
+        expect(headlines).toHaveLength(3);
+        const classesIds = JSON.parse(result.classes_ids_json);
+        expect(classesIds).toContain('small');
+    });
+
+    it('handles real-world KOCH ESSEN page', function () {
+        const result = parseSnapshot(REAL_WORLD_KOCH_HEAD);
+        expect(result.title).toBe('SEO Agentur KOCH ESSEN \u2022 Full-Service und SEO Beratung');
+        expect(result.meta_description).toContain('Zuverlässige SEO-Agentur in Essen');
+        expect(result.meta_description).toContain('Jetzt Anfragen!');
+    });
+});
