@@ -244,6 +244,15 @@ export function deleteSnapshotsForUrl(url) {
 }
 
 
+export function getAllUrls() {
+    return getDb().prepare(
+        'SELECT url, COUNT(*) AS cnt FROM snapshots GROUP BY url ORDER BY MAX(date) DESC'
+    ).all().map(function (r) {
+        return { url: r.url, count: r.cnt };
+    });
+}
+
+
 export function getPageInfo(url) {
     const row = getDb().prepare(`
         SELECT

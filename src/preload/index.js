@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('api', {
         return ipcRenderer.invoke('get-app-version');
     },
 
+    getAllUrls: function () {
+        return ipcRenderer.invoke('get-all-urls');
+    },
+
     getSnapshots: function (url) {
         return ipcRenderer.invoke('get-snapshots', url);
     },

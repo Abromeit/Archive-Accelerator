@@ -5,6 +5,9 @@ export class UrlInput extends LitElement {
         value: { type: String },
         syncing: { type: Boolean },
         progress: { type: Object },
+        _dropdownOpen: { state: true },
+        _allUrls: { state: true },
+        _filterText: { state: true },
     };
 
     createRenderRoot() {
@@ -16,11 +19,48 @@ export class UrlInput extends LitElement {
         this.value = '';
         this.syncing = false;
         this.progress = null;
+        this._dropdownOpen = false;
+        this._allUrls = [];
+        this._filterText = '';
+        this._onDocClick = this._onDocClick.bind(this);
+    }
+
+    connectedCallback() {
+        super.connectedCallback();
+        document.addEventListener('click', this._onDocClick, true);
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        document.removeEventListener('click', this._onDocClick, true);
+    }
+
+    _onDocClick(e) {
+        if (this._dropdownOpen && !this.contains(e.target)) {
+            this._dropdownOpen = false;
+        }
+    }
+
+    async _handleFocus() {
+        this._allUrls = await window.api.getAllUrls();
+        this._filterText = '';
+        this._dropdownOpen = true;
+    }
+
+    _handleInput(e) {
+        this._filterText = e.target.value;
+        if (!this._dropdownOpen && this._filterText) {
+            this._dropdownOpen = true;
+        }
     }
 
     _handleKeyDown(e) {
         if (e.key === 'Enter') {
+            this._dropdownOpen = false;
             this._submit(e.target.value.trim());
+        }
+        if (e.key === 'Escape') {
+            this._dropdownOpen = false;
         }
     }
 
@@ -29,6 +69,13 @@ export class UrlInput extends LitElement {
         if (val && val !== this.value) {
             this._submit(val);
         }
+    }
+
+    _selectUrl(url) {
+        this._dropdownOpen = false;
+        const input = this.querySelector('input[type="text"]');
+        if (input) input.value = url;
+        this._submit(url);
     }
 
     _submit(url) {
@@ -48,11 +95,21 @@ export class UrlInput extends LitElement {
         }));
     }
 
+    _getFilteredUrls() {
+        const q = this._filterText.toLowerCase().trim();
+        if (!q) return this._allUrls;
+        return this._allUrls.filter(function (item) {
+            return item.url.toLowerCase().includes(q);
+        });
+    }
+
     render() {
+        const filtered = this._getFilteredUrls();
+
         return html`
-            <div class="flex items-center gap-2 px-4 h-12 bg-surface-0 border-b border-surface-3
+            <div class="relative flex items-center gap-2 px-4 h-12 bg-surface-0 border-b border-surface-3
                         app-region-drag flex-shrink-0">
-                <div class="app-region-no-drag flex items-center gap-2 flex-1">
+                <div class="app-region-no-drag flex items-center gap-2 flex-1 relative">
                     <svg class="text-text-muted flex-shrink-0" width="16" height="16" viewBox="0 0 24 24"
                          fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10" />
@@ -66,9 +123,34 @@ export class UrlInput extends LitElement {
                                px-3 py-1.5 border border-surface-3
                                placeholder:text-text-muted
                                focus:outline-none focus:ring-1 focus:ring-accent-green/50"
+                        @focus=${this._handleFocus}
+                        @input=${this._handleInput}
                         @keydown=${this._handleKeyDown}
-                        @blur=${this._handleBlur}
                     />
+
+                    ${this._dropdownOpen && filtered.length > 0
+                        ? html`
+                            <div class="absolute left-6 right-[90px] top-[38px] z-50
+                                        bg-surface-2 border border-surface-3 rounded-lg shadow-lg
+                                        max-h-[320px] overflow-y-auto">
+                                ${filtered.map((item) => html`
+                                    <button
+                                        class="w-full text-left px-3 py-2 text-sm text-text-primary
+                                               hover:bg-surface-3 cursor-pointer flex items-center
+                                               justify-between gap-2 transition-colors"
+                                        @mousedown=${(e) => { e.preventDefault(); this._selectUrl(item.url); }}
+                                    >
+                                        <span class="truncate ${item.url === this.value ? 'text-accent-green' : ''}"
+                                        >${item.url}</span>
+                                        <span class="text-[11px] text-text-muted flex-shrink-0"
+                                        >${item.count}</span>
+                                    </button>
+                                `)}
+                            </div>
+                        `
+                        : ''
+                    }
+
                     <button
                         class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium
                                transition-colors duration-150 flex-shrink-0

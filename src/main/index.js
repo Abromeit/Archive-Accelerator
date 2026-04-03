@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { join } from 'node:path';
 import { config } from 'dotenv';
 import { buildMenu } from './menu.js';
-import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getPageInfo, getAnalyticsData, getAllProviders, disconnectProvider, getSetting, setSetting, deleteSnapshotsForUrl } from './db.js';
+import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getPageInfo, getAllUrls, getAnalyticsData, getAllProviders, disconnectProvider, getSetting, setSetting, deleteSnapshotsForUrl } from './db.js';
 import { decompressToString } from './compression.js';
 import { syncUrl } from './archive-sync.js';
 import { syncAnalytics } from './gsc-api.js';
@@ -62,6 +62,11 @@ app.on('window-all-closed', function () {
 
 ipcMain.handle('get-app-version', function () {
     return app.getVersion();
+});
+
+
+ipcMain.handle('get-all-urls', function () {
+    return getAllUrls();
 });
 
 
