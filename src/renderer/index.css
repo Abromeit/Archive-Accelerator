@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@font-face {
+    font-family: 'Google Sans';
+    src: url('./fonts/static/GoogleSans-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Google Sans';
+    src: url('./fonts/static/GoogleSans-Medium.ttf') format('truetype');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@theme {
+    --color-surface-0: #0f0f0f;
+    --color-surface-1: #1a1a1a;
+    --color-surface-2: #262626;
+    --color-surface-3: #333333;
+    --color-surface-4: #404040;
+
+    --color-text-primary: #f5f5f5;
+    --color-text-secondary: #a3a3a3;
+    --color-text-muted: #737373;
+
+    --color-accent-green: #34d399;
+    --color-accent-amber: #fbbf24;
+    --color-accent-blue: #60a5fa;
+    --color-accent-purple: #c084fc;
+
+    --color-diff-added: #22c55e;
+    --color-diff-removed: #ef4444;
+    --color-diff-added-bg: #052e16;
+    --color-diff-removed-bg: #450a0a;
+
+    --color-snapshot-base: #059669;
+}
+
+@layer base {
+    ::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: var(--color-surface-3);
+        border-radius: 3px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--color-surface-4);
+    }
+
+    .app-region-drag {
+        -webkit-app-region: drag;
+    }
+
+    .app-region-no-drag {
+        -webkit-app-region: no-drag;
+    }
+
+    select option {
+        background: var(--color-surface-2);
+        color: var(--color-text-primary);
+    }
+
+    .icon-tip {
+        position: relative;
+    }
+
+    .icon-tip .tip-text {
+        position: absolute;
+        bottom: calc(100% + 6px);
+        left: 0;
+        padding: 4px 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        white-space: nowrap;
+        color: var(--color-text-primary);
+        background: var(--color-surface-3);
+        border: 1px solid var(--color-surface-4);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.12s ease;
+        z-index: 50;
+    }
+
+    .icon-tip:hover .tip-text {
+        opacity: 1;
+    }
+}

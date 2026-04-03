@@ -1,0 +1,22 @@
+{
+    "name": "archive-accelerator",
+    "version": "0.1.0",
+    "description": "Simplify and speed up working with past web page versions from archive.org",
+    "main": "./out/main/index.js",
+    "scripts": {
+        "dev": "unset ELECTRON_RUN_AS_NODE && electron-vite dev",
+        "build": "unset ELECTRON_RUN_AS_NODE && electron-vite build",
+        "preview": "unset ELECTRON_RUN_AS_NODE && electron-vite preview"
+    },
+    "dependencies": {
+        "lit": "^3.0.0",
+        "echarts": "^5.6.0",
+        "diff": "^7.0.0"
+    },
+    "devDependencies": {
+        "electron": "^39.0.0",
+        "electron-vite": "^5.0.0",
+        "@tailwindcss/vite": "^4.0.0",
+        "tailwindcss": "^4.0.0"
+    }
+}
