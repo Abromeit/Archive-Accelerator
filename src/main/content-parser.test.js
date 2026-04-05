@@ -348,13 +348,22 @@ describe('extractPlaintext', function () {
         expect(extractPlaintext('<body><p>In body only</p></body>')).toBe('In body only');
     });
 
-    it('includes head title text when <html> has no <body> (full document is treated as body)', function () {
+    it('excludes head title text when <body> is implicit', function () {
         const html = '<html><head><title>Head title</title></head><p>Direct under html</p></html>';
-        expect(extractPlaintext(html)).toBe('Head title Direct under html');
+        expect(extractPlaintext(html)).toBe('Direct under html');
     });
 
     it('handles <!DOCTYPE> followed by content without <body>', function () {
         expect(extractPlaintext('<!DOCTYPE html><p>After doctype</p>')).toBe('After doctype');
+    });
+
+    it('excludes inert template contents from plaintext', function () {
+        const html = '<html><head></head><body><p>Visible</p><template><p>Hidden</p></template></body></html>';
+        expect(extractPlaintext(html)).toBe('Visible');
+    });
+
+    it('handles implicit body when no <body> tag exists', function () {
+        expect(extractPlaintext('<!doctype html><title>foo</title><h1>bar')).toBe('bar');
     });
 });
 
@@ -412,6 +421,12 @@ describe('extractHeadlines', function () {
         expect(headlines[1]).toEqual({ level: 2, text: 'Next heading.' });
     });
 
+    it('finds headline in implicit body (no <body> tag)', function () {
+        const headlines = extractHeadlines('<!doctype html><title>foo</title><h1>bar');
+        expect(headlines).toHaveLength(1);
+        expect(headlines[0]).toEqual({ level: 1, text: 'bar' });
+    });
+
     it('produces identical headlines for same content with different raw nesting', function () {
         const broken = '<html><head></head><body>' +
             '<div class="wrap"><h2>Title.</div><div class="sub">Body text</div>' +
@@ -454,6 +469,11 @@ describe('extractClassesAndIds', function () {
     it('returns empty array for HTML without classes/ids', function () {
         const html = '<html><body><p>Plain</p></body></html>';
         expect(extractClassesAndIds(html)).toEqual([]);
+    });
+
+    it('collects classes from inside template content', function () {
+        const html = '<html><body><template><div class="in-template"></div></template></body></html>';
+        expect(extractClassesAndIds(html)).toContain('in-template');
     });
 });
 

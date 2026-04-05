@@ -1,17 +1,20 @@
 import { decodeHTML } from 'entities';
 import { parse as parse5 } from 'parse5';
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+const VOID_HTML = new Set([
+    'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr',
+]);
+
 const RE_HEAD_SPLIT = /<body(?:\s[^>]*)?>/i;
 const RE_BODY_END = /<\/body\s*>/i;
 const RE_TITLE = /<title[^>]*>([\s\S]*?)<\/title>/i;
 const RE_META_DESC = /<meta\s[^>]*name\s*=\s*["']?description["']?[^>]*content\s*=\s*["']([\s\S]*?)["'][^>]*\/?>/i;
 const RE_META_DESC_ALT = /<meta\s[^>]*content\s*=\s*["']([\s\S]*?)["'][^>]*name\s*=\s*["']?description["']?[^>]*\/?>/i;
-const RE_IMG_ALT = /<img\s[^>]*alt\s*=\s*["']([^"']*)["'][^>]*\/?>/gi;
-const RE_SCRIPT_STYLE = /<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi;
 const RE_COMMENTS = /<!--[\s\S]*?-->/g;
+const RE_SCRIPT_STYLE = /<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi;
 const RE_ALL_TAGS = /<[^>]+>/g;
-const RE_CLASS = /\bclass\s*=\s*["']([^"']*)["']/gi;
-const RE_ID = /\bid\s*=\s*["']([^"']*)["']/gi;
 const RE_MULTI_SPACE = /\s+/g;
 
 const RE_BV_IMG_QUOTED = /<img\s[^>]*?alt\s*=\s*(['"])(.*?)\1[^>]*?\/?>/gi;
@@ -69,27 +72,16 @@ export function extractMetaDescription(html) {
 }
 
 
-export function extractPlaintext(html) {
-    let body = getBody(html);
-
-    body = body.replace(RE_COMMENTS, ' ');
-    body = body.replace(RE_SCRIPT_STYLE, ' ');
-
-    body = body.replace(RE_IMG_ALT, function (_m, alt) {
-        return ' ' + alt + ' ';
-    });
-
-    body = body.replace(RE_ALL_TAGS, ' ');
-
-    body = decodeHtmlEntities(body);
-
-    body = body.replace(RE_MULTI_SPACE, ' ').trim();
-    return body;
+export function extractPlaintext(html, doc) {
+    const body = findBodyNode(doc || parse5(html));
+    const out = { s: '' };
+    appendPlaintextChildren(body, out);
+    return out.s.replace(RE_MULTI_SPACE, ' ').trim();
 }
 
 
-export function extractHeadlines(html) {
-    const doc = parse5(html);
+export function extractHeadlines(html, doc) {
+    const body = findBodyNode(doc || parse5(html));
     const headlines = [];
 
     function walk(node) {
@@ -100,46 +92,141 @@ export function extractHeadlines(html) {
             });
             return;
         }
-        const children = node.childNodes || [];
-        for (let i = 0, i_max = children.length; i < i_max; ++i) {
-            walk(children[i]);
+        for (const child of node.childNodes || []) {
+            walk(child);
         }
     }
 
-    walk(doc);
+    walk(body);
     return headlines;
+}
+
+
+function findBodyNode(doc) {
+    for (const child of doc.childNodes || []) {
+        if (child.nodeName === 'html') {
+            for (const el of child.childNodes || []) {
+                if (el.nodeName === 'body') {
+                    return el;
+                }
+            }
+        }
+    }
+    return doc;
 }
 
 
 function getTreeText(node) {
     if (node.nodeName === '#text') return node.value || '';
-    const children = node.childNodes || [];
     let result = '';
-    for (let i = 0, i_max = children.length; i < i_max; ++i) {
-        result += getTreeText(children[i]);
+    for (const child of node.childNodes || []) {
+        result += getTreeText(child);
     }
     return result;
 }
 
 
-export function extractClassesAndIds(html) {
-    const result = new Set();
-    let match;
+function appendPlaintextChildren(parent, out) {
+    for (const child of parent.childNodes || []) {
+        appendPlaintextNode(child, out);
+    }
+}
 
-    RE_CLASS.lastIndex = 0;
-    while ((match = RE_CLASS.exec(html)) !== null) {
-        const classes = match[1].trim().split(/\s+/);
-        for (let i = 0, i_max = classes.length; i < i_max; ++i) {
-            if (classes[i]) result.add(classes[i]);
+
+function appendPlaintextNode(node, out) {
+    if (node.nodeName === '#text') {
+        out.s += node.value || '';
+        return;
+    }
+    if (node.nodeName === '#comment') {
+        return;
+    }
+    if (node.nodeName === '#document' || node.nodeName === '#document-fragment') {
+        appendPlaintextChildren(node, out);
+        return;
+    }
+    if (node.namespaceURI === SVG_NS) {
+        return;
+    }
+    const tag = node.nodeName;
+    if (tag === 'script' || tag === 'style' || tag === 'noscript') {
+        return;
+    }
+    if (tag === 'template') {
+        return;
+    }
+    if (tag === 'img') {
+        out.s += ' ' + getAttr(node, 'alt') + ' ';
+        return;
+    }
+    if (VOID_HTML.has(tag)) {
+        out.s += ' ';
+        return;
+    }
+    out.s += ' ';
+    appendPlaintextChildren(node, out);
+    out.s += ' ';
+}
+
+
+function getAttr(element, name) {
+    const attrs = element.attrs;
+    if (!attrs || !attrs.length) {
+        return '';
+    }
+    for (const attr of attrs) {
+        if (attr.name === name) {
+            return attr.value || '';
+        }
+    }
+    return '';
+}
+
+
+export function extractClassesAndIds(html, doc) {
+    const result = new Set();
+    doc = doc || parse5(html);
+
+    function walk(node) {
+        if (!node) {
+            return;
+        }
+        if (node.nodeName === '#text' || node.nodeName === '#comment') {
+            return;
+        }
+        if (node.nodeName === '#documentType') {
+            return;
+        }
+        const attrs = node.attrs;
+        if (attrs && attrs.length) {
+            for (const a of attrs) {
+                if (a.name === 'class') {
+                    for (const cls of (a.value || '').trim().split(/\s+/)) {
+                        if (cls) {
+                            result.add(cls);
+                        }
+                    }
+                }
+                if (a.name === 'id') {
+                    const id = (a.value || '').trim();
+                    if (id) {
+                        result.add('#' + id);
+                    }
+                }
+            }
+        }
+        if (node.nodeName === 'template' && node.content) {
+            for (const tChild of node.content.childNodes || []) {
+                walk(tChild);
+            }
+            return;
+        }
+        for (const child of node.childNodes || []) {
+            walk(child);
         }
     }
 
-    RE_ID.lastIndex = 0;
-    while ((match = RE_ID.exec(html)) !== null) {
-        const id = match[1].trim();
-        if (id) result.add('#' + id);
-    }
-
+    walk(doc);
     return Array.from(result).sort();
 }
 
@@ -181,12 +268,13 @@ export function extractBotview(html) {
 
 
 export function parseSnapshot(html) {
+    const doc = parse5(html);
     return {
         title: extractTitle(html),
         meta_description: extractMetaDescription(html),
-        plaintext: extractPlaintext(html),
-        headlines_json: JSON.stringify(extractHeadlines(html)),
-        classes_ids_json: JSON.stringify(extractClassesAndIds(html)),
+        plaintext: extractPlaintext(html, doc),
+        headlines_json: JSON.stringify(extractHeadlines(html, doc)),
+        classes_ids_json: JSON.stringify(extractClassesAndIds(html, doc)),
         botview: extractBotview(html),
     };
 }
