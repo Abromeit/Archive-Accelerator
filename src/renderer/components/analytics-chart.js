@@ -1140,21 +1140,53 @@ export class AnalyticsChart extends LitElement {
                 </div>
 
                 ${this._analyticsLoading
-                    ? html`<p class="text-xs text-text-muted mb-2">Loading Search Console data…</p>`
-                    : null}
-                ${this._analyticsError
-                    ? html`<p class="text-xs text-red-400 mb-2">${this._analyticsError}</p>`
-                    : null}
-                ${!this._analyticsLoading && !this._analyticsError && this._analyticsData.length === 0
-                    ? html`<p class="text-xs text-text-muted mb-2">
-                          No data for this URL in the selected GSC property (or no traffic in the last 18 months).
-                          Use the app menu to pick the right property; the URL must match the page in Search Console
-                          (including http/https and trailing slash).
-                      </p>`
-                    : null}
-
-                <!-- Chart container -->
-                <div id="analytics-chart-container" class="flex-1 min-h-[300px]"></div>
+                    ? html`
+                        <div class="flex-1 flex flex-col items-center justify-center text-center px-8">
+                            <svg class="text-text-muted mb-4 animate-spin" width="28" height="28"
+                                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                            </svg>
+                            <p class="text-sm text-text-muted">Loading Search Console data…</p>
+                        </div>`
+                    : this._analyticsError
+                    ? html`
+                        <div class="flex-1 flex flex-col items-center justify-center text-center px-8">
+                            <div class="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center
+                                        justify-center mb-4">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                     stroke="currentColor" stroke-width="1.5" class="text-amber-400">
+                                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                    <line x1="12" y1="9" x2="12" y2="13" />
+                                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                                </svg>
+                            </div>
+                            <h3 class="text-sm font-medium text-text-secondary mb-1">
+                                Unable to load analytics
+                            </h3>
+                            <p class="text-xs text-text-muted max-w-[320px]">
+                                ${this._analyticsError}
+                            </p>
+                        </div>`
+                    : this._analyticsData.length === 0
+                    ? html`
+                        <div class="flex-1 flex flex-col items-center justify-center text-center px-8">
+                            <div class="w-12 h-12 rounded-xl bg-surface-2 flex items-center
+                                        justify-center mb-4">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                     stroke="currentColor" stroke-width="1.5" class="text-text-muted">
+                                    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                </svg>
+                            </div>
+                            <h3 class="text-sm font-medium text-text-secondary mb-1">
+                                No analytics data
+                            </h3>
+                            <p class="text-xs text-text-muted max-w-[320px]">
+                                No data for this URL in the selected GSC property, or no traffic
+                                in the last 18 months. Use the app menu to pick the right property.
+                            </p>
+                        </div>`
+                    : html`<div id="analytics-chart-container" class="flex-1 min-h-[300px]"></div>`
+                }
             </div>
         `;
     }
