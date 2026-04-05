@@ -93,6 +93,20 @@ export class HtmlViewer extends LitElement {
         this._iframeShortcutDoc = doc;
     }
 
+    _interceptIframeLinks() {
+        const doc = this._getIframeDoc();
+        if (!doc) return;
+        doc.addEventListener('click', function (e) {
+            const a = e.target.closest('a[href]');
+            if (!a) return;
+            const href = a.getAttribute('href');
+            if (href && /^https?:\/\//i.test(href)) {
+                e.preventDefault();
+                window.api.openExternal(href);
+            }
+        });
+    }
+
     /**
      * Cmd+F / Ctrl+F focus search; Cmd+G / Ctrl+G next match (Web page tab only).
      *
@@ -576,6 +590,7 @@ export class HtmlViewer extends LitElement {
                 sandbox="allow-same-origin"
                 @load=${() => {
                     this._attachIframeSearchShortcuts();
+                    this._interceptIframeLinks();
                     if (this._searchQuery) {
                         this._highlightInIframe(this._searchQuery.trim());
                     }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import { join } from 'node:path';
 import { config } from 'dotenv';
 import { buildMenu } from './menu.js';
@@ -62,6 +62,13 @@ app.on('window-all-closed', function () {
 
 ipcMain.handle('get-app-version', function () {
     return app.getVersion();
+});
+
+
+ipcMain.handle('open-external', function (_event, url) {
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
+        shell.openExternal(url);
+    }
 });
 
 

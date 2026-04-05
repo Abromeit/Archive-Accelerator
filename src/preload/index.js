@@ -83,6 +83,10 @@ contextBridge.exposeInMainWorld('api', {
         return ipcRenderer.invoke('confirm-delete-snapshots', url, count);
     },
 
+    openExternal: function (url) {
+        return ipcRenderer.invoke('open-external', url);
+    },
+
     onProviderAction: function (callback) {
         ipcRenderer.on('provider-action', function (_event, data) {
             callback(data);
