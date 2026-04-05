@@ -1,6 +1,6 @@
 import { LitElement, html } from 'lit';
 
-const TABS = ['Web Page', 'Text-Diff', 'Meta', 'Charts', 'Sync Log'];
+const TABS = ['Web Page', 'Text-Diff', 'Meta', 'Charts', 'Log'];
 
 export class TabNavigation extends LitElement {
     static properties = {
@@ -52,6 +52,7 @@ export class TabNavigation extends LitElement {
                         aria-selected="${i === this.activeTab}"
                         class="px-4 py-2.5 text-sm font-medium transition-colors duration-150
                                cursor-pointer relative flex items-center gap-1.5
+                               ${i === TABS.length - 1 ? 'ml-auto' : ''}
                                ${i === this.activeTab
                                    ? 'text-accent-green'
                                    : 'text-text-muted hover:text-text-secondary'
