@@ -8,6 +8,15 @@ const MONTH_SHORT = [
 ];
 
 
+/**
+ * GSC-style metric hues at ~Tailwind *-400 luminance (same band as icon green #34d399 / emerald-400)
+ * so lines read clearly on dark UI without heavy saturation.
+ */
+const GSC_CLICKS = '#60a5fa';
+const GSC_IMPRESSIONS = '#a78bfa';
+const GSC_POSITION = '#fb923c';
+
+
 function parseYmd(dateStr) {
     const parts = dateStr.split('-');
     const y = parseInt(parts[0], 10);
@@ -47,24 +56,139 @@ function bucketKeyForGranularity(dateStr, granularity) {
 }
 
 
-function formatXAxisLabel(val, granularity) {
-    if (granularity === 'daily') {
-        return val;
-    }
+function getMonthKeyFromCategory(cat, granularity) {
     if (granularity === 'monthly') {
-        const parts = val.split('-');
+        return cat;
+    }
+    const parts = String(cat).split('-');
+    if (parts.length >= 3) {
+        return `${parts[0]}-${parts[1]}`;
+    }
+    if (parts.length === 2) {
+        return cat;
+    }
+    return String(cat);
+}
+
+
+/**
+ * Axis tick at the start of each calendar month: "1 Jan 2024".
+ */
+/**
+ * First tick in each calendar month uses the real category date (e.g. "21 Nov 2024"), not "1 Nov 2024".
+ */
+function formatCategoryAxisLabel(cat, granularity) {
+    if (granularity === 'monthly') {
+        const parts = String(cat).split('-');
         if (parts.length >= 2) {
             const y = parts[0];
             const mi = parseInt(parts[1], 10) - 1;
-            return `${MONTH_SHORT[mi]} ${y}`;
+            if (mi >= 0 && mi <= 11) {
+                return `${MONTH_SHORT[mi]} ${y}`;
+            }
         }
-        return val;
+        return String(cat);
     }
-    if (granularity === 'weekly') {
-        const d = parseYmd(val);
-        return `Wk ${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
+    const parts = String(cat).split('-');
+    if (parts.length < 3) {
+        return String(cat);
     }
-    return val;
+    const d = parseYmd(cat);
+    const day = d.getDate();
+    return `${day} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+
+function monthBoundaryAxisLabelFormatter(dates, granularity) {
+    return function (val, index) {
+        const idx = typeof index === 'number' ? index : dates.indexOf(val);
+        if (idx < 0 || idx >= dates.length) {
+            return '';
+        }
+        const mk = getMonthKeyFromCategory(dates[idx], granularity);
+        if (idx > 0) {
+            const prevMk = getMonthKeyFromCategory(dates[idx - 1], granularity);
+            if (prevMk === mk) {
+                return '';
+            }
+        }
+        return formatCategoryAxisLabel(dates[idx], granularity);
+    };
+}
+
+
+function getYAxis(coordSys) {
+    if (coordSys.getAxis) {
+        return coordSys.getAxis('y');
+    }
+    return coordSys.yAxis;
+}
+
+
+/**
+ * Pixel Y of the bottom edge of the grid (category axis line).
+ */
+function getGridBottomY(coordSys) {
+    if (coordSys.getArea) {
+        const area = coordSys.getArea();
+        if (area && typeof area.height === 'number') {
+            return area.y + area.height;
+        }
+    }
+    if (coordSys.getRect) {
+        const rect = coordSys.getRect();
+        if (rect && typeof rect.height === 'number') {
+            return rect.y + rect.height;
+        }
+    }
+    const yAxis = getYAxis(coordSys);
+    if (yAxis && yAxis.scale) {
+        const ext = yAxis.scale.getExtent();
+        const yMid = (ext[0] + ext[1]) / 2;
+        const pt = coordSys.dataToPoint([0, yMid]);
+        return pt[1];
+    }
+    const pt = coordSys.dataToPoint([0, 0]);
+    return pt[1];
+}
+
+
+const ZEBRA_A = 'rgba(255, 255, 255, 0.045)';
+const ZEBRA_B = 'rgba(255, 255, 255, 0.012)';
+
+
+/**
+ * Vertical bands by calendar month; uses category indices so a single monthly bucket still gets width.
+ */
+function buildMonthZebraMarkAreaData(dates, granularity) {
+    if (!dates.length) {
+        return [];
+    }
+    const out = [];
+    let i = 0;
+    let stripe = 0;
+    while (i < dates.length) {
+        const mk = getMonthKeyFromCategory(dates[i], granularity);
+        let j = i;
+        while (j + 1 < dates.length && getMonthKeyFromCategory(dates[j + 1], granularity) === mk) {
+            ++j;
+        }
+        const color = stripe % 2 === 0 ? ZEBRA_A : ZEBRA_B;
+        out.push([
+            {
+                xAxis: i,
+                itemStyle: { color: color, borderWidth: 0 },
+                emphasis: { disabled: true },
+            },
+            {
+                xAxis: j,
+                emphasis: { disabled: true },
+            },
+        ]);
+        ++stripe;
+        i = j + 1;
+    }
+    return out;
 }
 
 
@@ -379,9 +503,9 @@ export class AnalyticsChart extends LitElement {
                     position: 'left',
                     offset: 0,
                     name: 'Clicks',
-                    nameTextStyle: { color: '#34d399', fontSize: 10 },
+                    nameTextStyle: { color: GSC_CLICKS, fontSize: 10 },
                     axisLine: { show: false },
-                    axisLabel: { color: '#34d399', fontSize: 10 },
+                    axisLabel: { color: GSC_CLICKS, fontSize: 10 },
                     splitLine: showImpr ? { show: false } : { lineStyle: { color: '#262626' } },
                     min: 0,
                 });
@@ -394,9 +518,9 @@ export class AnalyticsChart extends LitElement {
                     position: 'left',
                     offset: showClicks ? 56 : 0,
                     name: 'Impressions',
-                    nameTextStyle: { color: '#60a5fa', fontSize: 10 },
+                    nameTextStyle: { color: GSC_IMPRESSIONS, fontSize: 10 },
                     axisLine: { show: false },
-                    axisLabel: { color: '#60a5fa', fontSize: 10 },
+                    axisLabel: { color: GSC_IMPRESSIONS, fontSize: 10 },
                     splitLine: { lineStyle: { color: '#262626' } },
                     min: 0,
                 });
@@ -408,9 +532,11 @@ export class AnalyticsChart extends LitElement {
                     type: 'value',
                     position: 'right',
                     name: 'Position',
-                    nameTextStyle: { color: '#fbbf24', fontSize: 10 },
+                    nameLocation: 'start',
+                    nameGap: 8,
+                    nameTextStyle: { color: GSC_POSITION, fontSize: 10 },
                     axisLine: { show: false },
-                    axisLabel: { color: '#fbbf24', fontSize: 10 },
+                    axisLabel: { color: GSC_POSITION, fontSize: 10 },
                     splitLine: { show: false },
                     inverse: true,
                     min: 1,
@@ -427,12 +553,12 @@ export class AnalyticsChart extends LitElement {
                     data: displayData.map((d) => d.clicks),
                     smooth: false,
                     symbol: 'none',
-                    lineStyle: { color: '#34d399', width: 2 },
-                    itemStyle: { color: '#34d399' },
+                    lineStyle: { color: GSC_CLICKS, width: 2 },
+                    itemStyle: { color: GSC_CLICKS },
                     areaStyle: {
                         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: 'rgba(52, 211, 153, 0.15)' },
-                            { offset: 1, color: 'rgba(52, 211, 153, 0)' },
+                            { offset: 0, color: 'rgba(96, 165, 250, 0.14)' },
+                            { offset: 1, color: 'rgba(96, 165, 250, 0)' },
                         ]),
                     },
                     markLine: series.length === 0 ? { data: markLineData, silent: true, symbol: ['none', 'none'] } : undefined,
@@ -447,12 +573,12 @@ export class AnalyticsChart extends LitElement {
                     data: displayData.map((d) => d.impressions),
                     smooth: false,
                     symbol: 'none',
-                    lineStyle: { color: '#60a5fa', width: 2 },
-                    itemStyle: { color: '#60a5fa' },
+                    lineStyle: { color: GSC_IMPRESSIONS, width: 2 },
+                    itemStyle: { color: GSC_IMPRESSIONS },
                     areaStyle: {
                         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: 'rgba(96, 165, 250, 0.1)' },
-                            { offset: 1, color: 'rgba(96, 165, 250, 0)' },
+                            { offset: 0, color: 'rgba(167, 139, 250, 0.12)' },
+                            { offset: 1, color: 'rgba(167, 139, 250, 0)' },
                         ]),
                     },
                     markLine: series.length === 0 ? { data: markLineData, silent: true, symbol: ['none', 'none'] } : undefined,
@@ -467,14 +593,23 @@ export class AnalyticsChart extends LitElement {
                     data: displayData.map((d) => d.position),
                     smooth: false,
                     symbol: 'none',
-                    lineStyle: { color: '#fbbf24', width: 2 },
-                    itemStyle: { color: '#fbbf24' },
+                    lineStyle: { color: GSC_POSITION, width: 2 },
+                    itemStyle: { color: GSC_POSITION },
                     markLine: series.length === 0 ? { data: markLineData, silent: true, symbol: ['none', 'none'] } : undefined,
                 });
             }
 
             if (series.length > 0 && !series.some((s) => s.markLine)) {
                 series[0].markLine = { data: markLineData, silent: true, symbol: ['none', 'none'] };
+            }
+
+            const zebraData = buildMonthZebraMarkAreaData(dates, granularity);
+            if (series.length > 0 && zebraData.length > 0) {
+                series[0].markArea = {
+                    silent: true,
+                    z: -20,
+                    data: zebraData,
+                };
             }
 
             const changeDates = changesMerged.filter((c) => dates.includes(c.date));
@@ -501,8 +636,9 @@ export class AnalyticsChart extends LitElement {
                 grid: {
                     top: 30,
                     right: showPos ? 60 : 20,
-                    bottom: 70,
                     left: gridLeft,
+                    bottom: 16,
+                    containLabel: true,
                 },
                 xAxis: {
                     type: 'category',
@@ -511,7 +647,14 @@ export class AnalyticsChart extends LitElement {
                     axisLabel: {
                         color: '#737373',
                         fontSize: 10,
-                        formatter: (val) => formatXAxisLabel(val, granularity),
+                        interval: 0,
+                        hideOverlap: false,
+                        rotate: 45,
+                        margin: 24,
+                        align: 'right',
+                        verticalAlign: 'top',
+                        inside: false,
+                        formatter: monthBoundaryAxisLabelFormatter(dates, granularity),
                     },
                     axisTick: { show: false },
                 },
@@ -553,6 +696,7 @@ export class AnalyticsChart extends LitElement {
 
         const S = 12;
         const GAP = 2;
+        const MARGIN_BELOW_AXIS = 6;
         const GREEN = '#34d399';
         const BG = '#1F1F1F';
         const LABELS = {
@@ -564,13 +708,16 @@ export class AnalyticsChart extends LitElement {
         };
         const elements = [];
 
+        const yAxis = getYAxis(coordSys);
+        const yExt = yAxis.scale.getExtent();
+        const yMid = (yExt[0] + yExt[1]) / 2;
+        const axisLineY = getGridBottomY(coordSys);
+
         for (const c of changeDates) {
             const catIdx = dates.indexOf(c.date);
             if (catIdx === -1) continue;
 
-            const pt = coordSys.dataToPoint([catIdx, 0]);
-            const x = pt[0];
-            const baseY = pt[1];
+            const x = coordSys.dataToPoint([catIdx, yMid])[0];
 
             const icons = [];
             if (c.templateChanged) icons.push('template');
@@ -579,11 +726,10 @@ export class AnalyticsChart extends LitElement {
 
             const totalW = icons.length * S + (icons.length - 1) * GAP;
             let sx = x - totalW / 2;
-            const iconYOffset = 24;
 
             for (const type of icons) {
                 const cx = sx + S / 2;
-                const cy = baseY + S / 2 + iconYOffset;
+                const cy = axisLineY + S / 2 + MARGIN_BELOW_AXIS;
                 const h = S / 2;
                 const dateLine =
                     c.dates && c.dates.length > 0
@@ -683,9 +829,9 @@ export class AnalyticsChart extends LitElement {
                 <div class="flex items-center justify-between gap-4 mb-4 flex-wrap">
                     <div class="flex items-center gap-2">
                         <span class="text-xs text-text-muted mr-2">Metrics:</span>
-                        ${this._renderToggle('clicks', 'Clicks', 'bg-accent-green/20 text-accent-green')}
-                        ${this._renderToggle('impressions', 'Impressions', 'bg-accent-blue/20 text-accent-blue')}
-                        ${this._renderToggle('position', 'Position', 'bg-accent-amber/20 text-accent-amber')}
+                        ${this._renderToggle('clicks', 'Clicks', 'bg-[#60a5fa]/20 text-[#60a5fa]')}
+                        ${this._renderToggle('impressions', 'Impressions', 'bg-[#a78bfa]/20 text-[#a78bfa]')}
+                        ${this._renderToggle('position', 'Position', 'bg-[#fb923c]/20 text-[#fb923c]')}
                     </div>
                     <div class="flex items-center gap-2">
                         <label class="text-xs text-text-muted" for="chart-granularity">Period:</label>
