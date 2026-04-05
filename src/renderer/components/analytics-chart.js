@@ -176,6 +176,81 @@ function getGridBottomY(coordSys) {
 }
 
 
+function getGridArea(coordSys) {
+    if (coordSys.getArea) {
+        const area = coordSys.getArea();
+        if (area && typeof area.height === 'number') {
+            return area;
+        }
+    }
+    if (coordSys.getRect) {
+        const rect = coordSys.getRect();
+        if (rect && typeof rect.height === 'number') {
+            return rect;
+        }
+    }
+    return null;
+}
+
+
+/**
+ * Index of the x-axis category bucket for a calendar date (matches chart aggregation).
+ */
+function findCategoryIndexForDate(dateStr, dates, granularity) {
+    if (!dateStr || !dates.length) {
+        return 0;
+    }
+    const key = bucketKeyForGranularity(dateStr, granularity);
+    let idx = dates.indexOf(key);
+    if (idx !== -1) {
+        return idx;
+    }
+    let i = 0;
+    const i_max = dates.length;
+    while (i < i_max) {
+        if (dates[i] >= dateStr) {
+            return i;
+        }
+        ++i;
+    }
+    return dates.length - 1;
+}
+
+
+/**
+ * Pixel rectangle covering category indices [idxFrom, idxTo] inclusive over the grid plot area.
+ */
+function getUncertaintyBandPixelRect(coordSys, idxFrom, idxTo, categoryCount) {
+    const area = getGridArea(coordSys);
+    if (!area) {
+        return { x: 0, y: 0, width: 0, height: 0 };
+    }
+    const yTop = area.y;
+    const h = area.height;
+    const p0 = coordSys.dataToPoint([idxFrom, 0]);
+    const p1 = coordSys.dataToPoint([idxTo, 0]);
+    let bandW = 0;
+    if (idxFrom + 1 < categoryCount) {
+        const pNext = coordSys.dataToPoint([idxFrom + 1, 0]);
+        bandW = Math.abs(pNext[0] - p0[0]);
+    } else if (idxFrom > 0) {
+        const pPrev = coordSys.dataToPoint([idxFrom - 1, 0]);
+        bandW = Math.abs(p0[0] - pPrev[0]);
+    } else {
+        bandW = 8;
+    }
+    const half = bandW / 2;
+    const xLeft = Math.min(p0[0], p1[0]) - half;
+    const xRight = Math.max(p0[0], p1[0]) + half;
+    return {
+        x: xLeft,
+        y: yTop,
+        width: Math.max(0, xRight - xLeft),
+        height: h,
+    };
+}
+
+
 const ZEBRA_A = 'rgba(255, 255, 255, 0.045)';
 const ZEBRA_B = 'rgba(255, 255, 255, 0.012)';
 
@@ -329,16 +404,27 @@ export class AnalyticsChart extends LitElement {
     }
 
     _getSnapshotChanges() {
-        return this.snapshots
-            .filter((s) => s.templateChanged || s.textChanged || s.metaChanged)
-            .map((s) => ({
-                date: s.date,
-                templateChanged: s.templateChanged,
-                textChanged: s.textChanged,
-                headlinesChanged: s.headlinesChanged,
-                metaChanged: s.metaChanged,
-                titleChanged: s.titleChanged,
-            }));
+        const snaps = this.snapshots;
+        const out = [];
+        let i = 0;
+        const i_max = snaps.length;
+        while (i < i_max) {
+            const s = snaps[i];
+            if (s.templateChanged || s.textChanged || s.metaChanged) {
+                const prev = snaps[i + 1];
+                out.push({
+                    date: s.date,
+                    previousSnapshotDate: prev ? prev.date : null,
+                    templateChanged: s.templateChanged,
+                    textChanged: s.textChanged,
+                    headlinesChanged: s.headlinesChanged,
+                    metaChanged: s.metaChanged,
+                    titleChanged: s.titleChanged,
+                });
+            }
+            ++i;
+        }
+        return out;
     }
 
 
@@ -401,6 +487,7 @@ export class AnalyticsChart extends LitElement {
                 return {
                     date: c.date,
                     dates: [c.date],
+                    previousSnapshotDate: c.previousSnapshotDate ?? null,
                     templateChanged: !!c.templateChanged,
                     textChanged: !!c.textChanged,
                     headlinesChanged: !!c.headlinesChanged,
@@ -414,10 +501,12 @@ export class AnalyticsChart extends LitElement {
         for (let i = 0, n = changes.length; i < n; ++i) {
             const c = changes[i];
             const key = bucketKeyForGranularity(c.date, granularity);
+            const prevD = c.previousSnapshotDate ?? null;
             if (!map.has(key)) {
                 map.set(key, {
                     date: key,
                     dates: [c.date],
+                    previousSnapshotDate: prevD,
                     templateChanged: !!c.templateChanged,
                     textChanged: !!c.textChanged,
                     headlinesChanged: !!c.headlinesChanged,
@@ -433,6 +522,12 @@ export class AnalyticsChart extends LitElement {
                 m.titleChanged = m.titleChanged || c.titleChanged;
                 if (m.dates.indexOf(c.date) === -1) {
                     m.dates.push(c.date);
+                }
+                if (
+                    prevD &&
+                    (!m.previousSnapshotDate || prevD < m.previousSnapshotDate)
+                ) {
+                    m.previousSnapshotDate = prevD;
                 }
             }
         }
@@ -636,7 +731,8 @@ export class AnalyticsChart extends LitElement {
             }
 
             const changeDates = changesMerged.filter((c) => dates.includes(c.date));
-            this._pendingChangeIcons = changeDates.length > 0 ? { changeDates, dates } : null;
+            this._pendingChangeIcons =
+                changeDates.length > 0 ? { changeDates, dates, granularity } : null;
 
             let gridLeft = 60;
             if (showClicks && showImpr) {
@@ -696,8 +792,9 @@ export class AnalyticsChart extends LitElement {
             return;
         }
 
-        const { changeDates, dates } = this._pendingChangeIcons;
-        const coordSys = this._chart.getModel().getSeriesByIndex(0)?.coordinateSystem;
+        const { changeDates, dates, granularity } = this._pendingChangeIcons;
+        const chart = this._chart;
+        const coordSys = chart.getModel().getSeriesByIndex(0)?.coordinateSystem;
         if (!coordSys) return;
 
         const container = this.querySelector('#analytics-chart-container');
@@ -730,6 +827,17 @@ export class AnalyticsChart extends LitElement {
             title: 'meta changed\nwith title tag',
         };
         const elements = [];
+        const BAND_FILL = 'rgba(52, 211, 153, 0.16)';
+
+        elements.push({
+            type: 'rect',
+            id: 'change-uncertainty-band',
+            ignore: true,
+            shape: { x: 0, y: 0, width: 0, height: 0 },
+            style: { fill: BAND_FILL },
+            z: -12,
+            silent: true,
+        });
 
         const yAxis = getYAxis(coordSys);
         const yExt = yAxis.scale.getExtent();
@@ -754,11 +862,14 @@ export class AnalyticsChart extends LitElement {
                 const cx = sx + S / 2;
                 const cy = axisLineY + S / 2 + MARGIN_BELOW_AXIS;
                 const h = S / 2;
-                const dateLine =
-                    c.dates && c.dates.length > 0
-                        ? c.dates.slice().sort().join(', ')
-                        : c.date;
-                const tipText = `${dateLine}\n${LABELS[type]}`;
+                const dateFrom = c.previousSnapshotDate ?? dates[0];
+                const dateTo = c.date;
+                const tipText = [
+                    'between',
+                    dateFrom + ' -',
+                    dateTo,
+                    LABELS[type],
+                ].join('\n');
                 const children = [];
 
                 children.push({
@@ -777,6 +888,36 @@ export class AnalyticsChart extends LitElement {
                         tooltipDiv.style.top = '0px';
                         tooltipDiv.style.display = 'block';
 
+                        let leftIdx = c.previousSnapshotDate
+                            ? findCategoryIndexForDate(
+                                  c.previousSnapshotDate,
+                                  dates,
+                                  granularity,
+                              )
+                            : 0;
+                        let rightIdx = catIdx;
+                        if (leftIdx > rightIdx) {
+                            const t = leftIdx;
+                            leftIdx = rightIdx;
+                            rightIdx = t;
+                        }
+                        const bandShape = getUncertaintyBandPixelRect(
+                            coordSys,
+                            leftIdx,
+                            rightIdx,
+                            dates.length,
+                        );
+                        chart.setOption({
+                            graphic: [
+                                {
+                                    id: 'change-uncertainty-band',
+                                    ignore: false,
+                                    shape: bandShape,
+                                    style: { fill: BAND_FILL },
+                                },
+                            ],
+                        });
+
                         requestAnimationFrame(function () {
                             const tipW = tooltipDiv.offsetWidth;
                             const tipH = tooltipDiv.offsetHeight;
@@ -791,6 +932,14 @@ export class AnalyticsChart extends LitElement {
                     },
                     onmouseout: function () {
                         tooltipDiv.style.opacity = '0';
+                        chart.setOption({
+                            graphic: [
+                                {
+                                    id: 'change-uncertainty-band',
+                                    ignore: true,
+                                },
+                            ],
+                        });
                     },
                 });
 
