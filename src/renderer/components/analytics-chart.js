@@ -9,6 +9,8 @@ export class AnalyticsChart extends LitElement {
         _connected: { type: Boolean, state: true },
         _prefs: { type: Object, state: true },
         _analyticsData: { type: Array, state: true },
+        _analyticsLoading: { type: Boolean, state: true },
+        _analyticsError: { type: String, state: true },
     };
 
     createRenderRoot() {
@@ -23,6 +25,8 @@ export class AnalyticsChart extends LitElement {
         this._prefs = { clicks: true, impressions: true, position: false };
         this._loadPrefs();
         this._analyticsData = [];
+        this._analyticsLoading = false;
+        this._analyticsError = null;
         this._chart = null;
         this._resizeObserver = null;
     }
@@ -41,7 +45,12 @@ export class AnalyticsChart extends LitElement {
         if (changed.has('currentUrl') || changed.has('_connected')) {
             this._loadData();
         }
-        if (changed.has('_analyticsData') || changed.has('_prefs') || changed.has('snapshots')) {
+        if (
+            changed.has('_analyticsData') ||
+            changed.has('_prefs') ||
+            changed.has('snapshots') ||
+            changed.has('_analyticsLoading')
+        ) {
             this._updateChart();
         }
     }
@@ -58,9 +67,27 @@ export class AnalyticsChart extends LitElement {
     async _loadData() {
         if (!this._connected || !this.currentUrl) {
             this._analyticsData = [];
+            this._analyticsError = null;
+            this._analyticsLoading = false;
             return;
         }
-        this._analyticsData = await dataService.getAnalyticsData(this.currentUrl);
+
+        this._analyticsLoading = true;
+        this._analyticsError = null;
+
+        try {
+            this._analyticsData = await dataService.syncAnalytics(this.currentUrl);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this._analyticsError = message;
+            try {
+                this._analyticsData = await dataService.getAnalyticsData(this.currentUrl);
+            } catch {
+                this._analyticsData = [];
+            }
+        } finally {
+            this._analyticsLoading = false;
+        }
     }
 
     _toggleMetric(metric) {
@@ -111,7 +138,14 @@ export class AnalyticsChart extends LitElement {
     }
 
     _updateChart() {
-        if (!this._analyticsData.length) return;
+        if (this._analyticsLoading) {
+            return;
+        }
+
+        if (!this._analyticsData.length) {
+            this._destroyChart();
+            return;
+        }
 
         requestAnimationFrame(() => {
             if (!this._chart) {
@@ -411,6 +445,20 @@ export class AnalyticsChart extends LitElement {
                     ${this._renderToggle('impressions', 'Impressions', 'bg-accent-blue/20 text-accent-blue')}
                     ${this._renderToggle('position', 'Position', 'bg-accent-amber/20 text-accent-amber')}
                 </div>
+
+                ${this._analyticsLoading
+                    ? html`<p class="text-xs text-text-muted mb-2">Loading Search Console data…</p>`
+                    : null}
+                ${this._analyticsError
+                    ? html`<p class="text-xs text-red-400 mb-2">${this._analyticsError}</p>`
+                    : null}
+                ${!this._analyticsLoading && !this._analyticsError && this._analyticsData.length === 0
+                    ? html`<p class="text-xs text-text-muted mb-2">
+                          No data for this URL in the selected GSC property (or no traffic in the last 18 months).
+                          Use the app menu to pick the right property; the URL must match the page in Search Console
+                          (including http/https and trailing slash).
+                      </p>`
+                    : null}
 
                 <!-- Chart container -->
                 <div id="analytics-chart-container" class="flex-1 min-h-[300px]"></div>

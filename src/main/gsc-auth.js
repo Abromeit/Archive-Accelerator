@@ -91,6 +91,8 @@ export function selectProperty(siteUrl) {
 
 function openBrowserAndWaitForCode() {
     return new Promise(function (resolve, reject) {
+        let listenPort = null;
+
         const server = createServer(function (req, res) {
             const reqUrl = new URL(req.url, `http://127.0.0.1`);
 
@@ -118,11 +120,19 @@ function openBrowserAndWaitForCode() {
                 return;
             }
 
-            resolve({ code, redirectUri: `http://127.0.0.1:${server.address().port}/callback` });
+            const port = listenPort ?? req.socket?.localPort;
+            if (port == null) {
+                reject(new Error('Could not determine OAuth callback port'));
+                return;
+            }
+
+            resolve({ code, redirectUri: `http://127.0.0.1:${port}/callback` });
         });
 
         server.listen(0, '127.0.0.1', function () {
-            const port = server.address().port;
+            const addr = server.address();
+            const port = typeof addr === 'object' && addr !== null ? addr.port : null;
+            listenPort = port;
             const redirectUri = `http://127.0.0.1:${port}/callback`;
 
             const authUrl = new URL(AUTH_ENDPOINT);
