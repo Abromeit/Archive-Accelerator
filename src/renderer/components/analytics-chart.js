@@ -311,6 +311,11 @@ export class AnalyticsChart extends LitElement {
             impressions: true,
             position: false,
             granularity: 'daily',
+            iconTemplate: true,
+            iconText: true,
+            iconHeadlines: true,
+            iconMeta: true,
+            iconTitle: true,
         };
         this._loadPrefs();
         this._analyticsData = [];
@@ -353,6 +358,11 @@ export class AnalyticsChart extends LitElement {
             impressions: true,
             position: false,
             granularity: 'daily',
+            iconTemplate: true,
+            iconText: true,
+            iconHeadlines: true,
+            iconMeta: true,
+            iconTitle: true,
             ...stored,
         };
         const g = this._prefs.granularity;
@@ -395,6 +405,32 @@ export class AnalyticsChart extends LitElement {
     _toggleMetric(metric) {
         this._prefs = { ...this._prefs, [metric]: !this._prefs[metric] };
         dataService.setChartPreferences(this._prefs);
+    }
+
+    _toggleIcon(iconType) {
+        const key = 'icon' + iconType.charAt(0).toUpperCase() + iconType.slice(1);
+        const newVal = !this._prefs[key];
+        const patch = { [key]: newVal };
+
+        if (iconType === 'meta') {
+            patch.iconTitle = newVal;
+        } else if (iconType === 'text') {
+            patch.iconHeadlines = newVal;
+        }
+
+        this._prefs = { ...this._prefs, ...patch };
+        dataService.setChartPreferences(this._prefs);
+    }
+
+    _isChangeVisible(c) {
+        if (c.templateChanged && this._prefs.iconTemplate) return true;
+        if (c.textChanged) {
+            if (c.headlinesChanged ? this._prefs.iconHeadlines : this._prefs.iconText) return true;
+        }
+        if (c.metaChanged) {
+            if (c.titleChanged ? this._prefs.iconTitle : this._prefs.iconMeta) return true;
+        }
+        return false;
     }
 
     _handleProviderConnected() {
@@ -633,7 +669,7 @@ export class AnalyticsChart extends LitElement {
             );
 
             const markLineData = changesMerged
-                .filter((c) => dates.includes(c.date))
+                .filter((c) => dates.includes(c.date) && this._isChangeVisible(c))
                 .map((c) => ({
                     xAxis: c.date,
                     label: { show: false },
@@ -769,7 +805,9 @@ export class AnalyticsChart extends LitElement {
                 };
             }
 
-            const changeDates = changesMerged.filter((c) => dates.includes(c.date));
+            const changeDates = changesMerged.filter(
+                (c) => dates.includes(c.date) && this._isChangeVisible(c),
+            );
             this._pendingChangeIcons =
                 changeDates.length > 0 ? { changeDates, dates, granularity } : null;
 
@@ -937,9 +975,22 @@ export class AnalyticsChart extends LitElement {
             }
 
             const icons = [];
-            if (c.templateChanged) icons.push('template');
-            if (c.textChanged) icons.push(c.headlinesChanged ? 'headlines' : 'text');
-            if (c.metaChanged) icons.push(c.titleChanged ? 'title' : 'meta');
+            if (c.templateChanged && this._prefs.iconTemplate) {
+                icons.push('template');
+            }
+            if (c.textChanged) {
+                const t = c.headlinesChanged ? 'headlines' : 'text';
+                if (t === 'headlines' ? this._prefs.iconHeadlines : this._prefs.iconText) {
+                    icons.push(t);
+                }
+            }
+            if (c.metaChanged) {
+                const t = c.titleChanged ? 'title' : 'meta';
+                if (t === 'title' ? this._prefs.iconTitle : this._prefs.iconMeta) {
+                    icons.push(t);
+                }
+            }
+            if (icons.length === 0) continue;
 
             const totalW = icons.length * S + (icons.length - 1) * GAP;
             let sx = x - totalW / 2;
@@ -1083,10 +1134,22 @@ export class AnalyticsChart extends LitElement {
         const g = this._prefs.granularity || 'daily';
         return html`
             <div class="h-full flex flex-col">
+                <!-- Icon type toggles -->
+                <div class="flex items-center gap-2 mb-2 flex-wrap">
+                    <span class="text-xs text-text-muted shrink-0 w-14">Changes:</span>
+                    ${this._renderIconToggle('template', 'Template')}
+                    <span class="w-px h-4 bg-neutral-700 mx-0.5"></span>
+                    ${this._renderIconToggle('text', 'Text')}
+                    ${this._renderIconToggle('headlines', 'Headlines')}
+                    <span class="w-px h-4 bg-neutral-700 mx-0.5"></span>
+                    ${this._renderIconToggle('meta', 'Meta')}
+                    ${this._renderIconToggle('title', 'Title tag')}
+                </div>
+
                 <!-- Metric toggles + period -->
                 <div class="flex items-center justify-between gap-4 mb-4 flex-wrap">
                     <div class="flex items-center gap-2">
-                        <span class="text-xs text-text-muted mr-2">Metrics:</span>
+                        <span class="text-xs text-text-muted shrink-0 w-14">Metrics:</span>
                         ${this._renderToggle('clicks', 'Clicks', 'bg-[#60a5fa]/20 text-[#60a5fa]')}
                         ${this._renderToggle('impressions', 'Impressions', 'bg-[#a78bfa]/20 text-[#a78bfa]')}
                         ${this._renderToggle('position', 'Position', 'bg-[#fb923c]/20 text-[#fb923c]')}
@@ -1135,6 +1198,83 @@ export class AnalyticsChart extends LitElement {
                 @click=${() => this._toggleMetric(metric)}
             >${label}</button>
         `;
+    }
+
+    _renderIconToggle(iconType, label) {
+        const key = 'icon' + iconType.charAt(0).toUpperCase() + iconType.slice(1);
+        const active = this._prefs[key];
+        const color = active ? '#34d399' : '#737373';
+        return html`
+            <button
+                class="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md
+                       transition-colors cursor-pointer
+                       ${active
+                           ? 'bg-emerald-400/15'
+                           : 'bg-surface-2 hover:bg-surface-2/80'}"
+                style="color: ${color}"
+                @click=${() => this._toggleIcon(iconType)}
+            >${this._iconSvg(iconType, active)} ${label}</button>
+        `;
+    }
+
+    _iconSvg(type, active) {
+        if (type === 'template') {
+            return html`<svg width="12" height="12" viewBox="0 0 12 12">
+                <rect x="0.5" y="0.5" width="11" height="11" rx="1"
+                      fill="none" stroke="currentColor" stroke-width="1"/>
+                <line x1="0.5" y1="3.7" x2="11.5" y2="3.7"
+                      stroke="currentColor" stroke-width="0.8"/>
+                <line x1="3.7" y1="3.7" x2="3.7" y2="11.5"
+                      stroke="currentColor" stroke-width="0.8"/>
+            </svg>`;
+        }
+        if (type === 'text') {
+            return html`<svg width="12" height="12" viewBox="0 0 12 12">
+                <rect x="0.5" y="0.5" width="11" height="11" rx="1"
+                      fill="none" stroke="currentColor" stroke-width="1"/>
+                <line x1="2.5" y1="4" x2="9.5" y2="4"
+                      stroke="currentColor" stroke-width="0.8"/>
+                <line x1="2.5" y1="6" x2="8.5" y2="6"
+                      stroke="currentColor" stroke-width="0.8"/>
+                <line x1="2.5" y1="8" x2="7.5" y2="8"
+                      stroke="currentColor" stroke-width="0.8"/>
+            </svg>`;
+        }
+        if (type === 'headlines') {
+            const bg = active ? '#1F1F1F' : '#2a2a2a';
+            return html`<svg width="12" height="12" viewBox="0 0 12 12">
+                <rect x="0.5" y="0.5" width="11" height="11" rx="1"
+                      fill="currentColor" stroke="none"/>
+                <rect x="2" y="3.5" width="8" height="1.5" rx="0.3"
+                      fill="${bg}"/>
+                <rect x="2" y="5.5" width="6.5" height="1.2" rx="0.3"
+                      fill="${bg}"/>
+                <rect x="2" y="7.5" width="5" height="1.2" rx="0.3"
+                      fill="${bg}"/>
+            </svg>`;
+        }
+        if (type === 'meta') {
+            return html`<svg width="12" height="12" viewBox="0 0 12 12">
+                <circle cx="6" cy="6" r="5"
+                        fill="none" stroke="currentColor" stroke-width="1"/>
+                <polyline points="4.5,3.5 7,6 4.5,8.5"
+                          fill="none" stroke="currentColor" stroke-width="1"/>
+                <line x1="7.5" y1="8.5" x2="9.5" y2="8.5"
+                      stroke="currentColor" stroke-width="0.8"/>
+            </svg>`;
+        }
+        if (type === 'title') {
+            const bg = active ? '#1F1F1F' : '#2a2a2a';
+            return html`<svg width="12" height="12" viewBox="0 0 12 12">
+                <circle cx="6" cy="6" r="5"
+                        fill="currentColor" stroke="none"/>
+                <polyline points="4.5,3.5 7,6 4.5,8.5"
+                          fill="none" stroke="${bg}" stroke-width="1.2"/>
+                <line x1="7.5" y1="8.5" x2="9.5" y2="8.5"
+                      stroke="${bg}" stroke-width="1.2"/>
+            </svg>`;
+        }
+        return html``;
     }
 }
 
