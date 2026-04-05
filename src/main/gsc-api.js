@@ -1,5 +1,11 @@
 import { getValidAccessToken } from './gsc-auth.js';
-import { getProvider, insertAnalyticsData, getAnalyticsData as getAnalyticsDataFromDb } from './db.js';
+import {
+    getProvider,
+    insertAnalyticsData,
+    getAnalyticsData as getAnalyticsDataFromDb,
+    shouldRefreshAnalyticsFromApi,
+    recordSuccessfulAnalyticsFetch,
+} from './db.js';
 
 const SEARCH_ANALYTICS_BASE = 'https://searchconsole.googleapis.com/webmasters/v3/sites';
 
@@ -8,6 +14,10 @@ export async function syncAnalytics(url) {
     const provider = getProvider('gsc');
     if (!provider || !provider.connected || !provider.property) {
         throw new Error('GSC not connected or no property selected');
+    }
+
+    if (!shouldRefreshAnalyticsFromApi(url, 'gsc', provider.property)) {
+        return getAnalyticsDataFromDb(url, 'gsc');
     }
 
     const accessToken = await getValidAccessToken();
@@ -29,6 +39,7 @@ export async function syncAnalytics(url) {
             };
         });
         insertAnalyticsData(dbRows);
+        recordSuccessfulAnalyticsFetch(url, 'gsc', provider.property);
     }
 
     return getAnalyticsDataFromDb(url, 'gsc');
@@ -48,6 +59,7 @@ async function fetchSearchAnalytics(property, pageUrl, startDate, endDate, acces
             startDate,
             endDate,
             dimensions: ['date'],
+            dataState: 'all',
             dimensionFilterGroups: [{
                 filters: [{
                     dimension: 'page',

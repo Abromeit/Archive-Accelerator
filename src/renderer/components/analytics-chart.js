@@ -168,13 +168,67 @@ export class AnalyticsChart extends LitElement {
                     },
                 }));
 
+            const showClicks = this._prefs.clicks;
+            const showImpr = this._prefs.impressions;
+            const showPos = this._prefs.position;
+
+            const yAxis = [];
+            let idxClick = -1;
+            let idxImpr = -1;
+            let idxPos = -1;
+
+            if (showClicks) {
+                idxClick = yAxis.length;
+                yAxis.push({
+                    type: 'value',
+                    position: 'left',
+                    offset: 0,
+                    name: 'Clicks',
+                    nameTextStyle: { color: '#34d399', fontSize: 10 },
+                    axisLine: { show: false },
+                    axisLabel: { color: '#34d399', fontSize: 10 },
+                    splitLine: showImpr ? { show: false } : { lineStyle: { color: '#262626' } },
+                    min: 0,
+                });
+            }
+
+            if (showImpr) {
+                idxImpr = yAxis.length;
+                yAxis.push({
+                    type: 'value',
+                    position: 'left',
+                    offset: showClicks ? 56 : 0,
+                    name: 'Impressions',
+                    nameTextStyle: { color: '#60a5fa', fontSize: 10 },
+                    axisLine: { show: false },
+                    axisLabel: { color: '#60a5fa', fontSize: 10 },
+                    splitLine: { lineStyle: { color: '#262626' } },
+                    min: 0,
+                });
+            }
+
+            if (showPos) {
+                idxPos = yAxis.length;
+                yAxis.push({
+                    type: 'value',
+                    position: 'right',
+                    name: 'Position',
+                    nameTextStyle: { color: '#fbbf24', fontSize: 10 },
+                    axisLine: { show: false },
+                    axisLabel: { color: '#fbbf24', fontSize: 10 },
+                    splitLine: { show: false },
+                    inverse: true,
+                    min: 1,
+                });
+            }
+
             const series = [];
 
-            if (this._prefs.clicks) {
+            if (showClicks) {
                 series.push({
                     name: 'Clicks',
                     type: 'line',
-                    yAxisIndex: 0,
+                    yAxisIndex: idxClick,
                     data: this._analyticsData.map((d) => d.clicks),
                     smooth: true,
                     symbol: 'none',
@@ -190,11 +244,11 @@ export class AnalyticsChart extends LitElement {
                 });
             }
 
-            if (this._prefs.impressions) {
+            if (showImpr) {
                 series.push({
                     name: 'Impressions',
                     type: 'line',
-                    yAxisIndex: 0,
+                    yAxisIndex: idxImpr,
                     data: this._analyticsData.map((d) => d.impressions),
                     smooth: true,
                     symbol: 'none',
@@ -210,11 +264,11 @@ export class AnalyticsChart extends LitElement {
                 });
             }
 
-            if (this._prefs.position) {
+            if (showPos) {
                 series.push({
                     name: 'Position',
                     type: 'line',
-                    yAxisIndex: 1,
+                    yAxisIndex: idxPos,
                     data: this._analyticsData.map((d) => d.position),
                     smooth: true,
                     symbol: 'none',
@@ -231,6 +285,13 @@ export class AnalyticsChart extends LitElement {
             const changeDates = changes.filter((c) => dates.includes(c.date));
             this._pendingChangeIcons = changeDates.length > 0 ? { changeDates, dates } : null;
 
+            let gridLeft = 60;
+            if (showClicks && showImpr) {
+                gridLeft = 104;
+            } else if (!showClicks && !showImpr && showPos) {
+                gridLeft = 24;
+            }
+
             const option = {
                 backgroundColor: 'transparent',
                 tooltip: {
@@ -244,9 +305,9 @@ export class AnalyticsChart extends LitElement {
                 },
                 grid: {
                     top: 30,
-                    right: this._prefs.position ? 60 : 20,
+                    right: showPos ? 60 : 20,
                     bottom: 70,
-                    left: 60,
+                    left: gridLeft,
                 },
                 xAxis: {
                     type: 'category',
@@ -259,27 +320,7 @@ export class AnalyticsChart extends LitElement {
                     },
                     axisTick: { show: false },
                 },
-                yAxis: [
-                    {
-                        type: 'value',
-                        name: 'Clicks / Impressions',
-                        nameTextStyle: { color: '#737373', fontSize: 10 },
-                        axisLine: { show: false },
-                        axisLabel: { color: '#737373', fontSize: 10 },
-                        splitLine: { lineStyle: { color: '#262626' } },
-                        min: 0,
-                    },
-                    {
-                        type: 'value',
-                        name: 'Position',
-                        nameTextStyle: { color: '#737373', fontSize: 10 },
-                        axisLine: { show: false },
-                        axisLabel: { color: '#737373', fontSize: 10 },
-                        splitLine: { show: false },
-                        inverse: true,
-                        min: 1,
-                    },
-                ],
+                yAxis,
                 series,
             };
 

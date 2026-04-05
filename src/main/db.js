@@ -84,6 +84,14 @@ function migrate() {
             key   TEXT PRIMARY KEY,
             value TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS analytics_fetch_meta (
+            url               TEXT NOT NULL,
+            provider          TEXT NOT NULL DEFAULT 'gsc',
+            property_snapshot TEXT,
+            last_success_fetch_at INTEGER NOT NULL,
+            PRIMARY KEY (url, provider)
+        );
     `);
 }
 
@@ -186,6 +194,39 @@ export function getAnalyticsData(url, provider) {
 }
 
 
+const GSC_REFRESH_MS = 4 * 60 * 60 * 1000;
+
+
+export function shouldRefreshAnalyticsFromApi(url, provider, currentProperty) {
+    const row = getDb().prepare(`
+        SELECT property_snapshot, last_success_fetch_at
+        FROM analytics_fetch_meta
+        WHERE url = ? AND provider = ?
+    `).get(url, provider || 'gsc');
+
+    if (!row) {
+        return true;
+    }
+
+    if (currentProperty != null && row.property_snapshot !== currentProperty) {
+        return true;
+    }
+
+    return Date.now() - row.last_success_fetch_at >= GSC_REFRESH_MS;
+}
+
+
+export function recordSuccessfulAnalyticsFetch(url, provider, propertySnapshot) {
+    getDb().prepare(`
+        INSERT INTO analytics_fetch_meta (url, provider, property_snapshot, last_success_fetch_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(url, provider) DO UPDATE SET
+            property_snapshot = excluded.property_snapshot,
+            last_success_fetch_at = excluded.last_success_fetch_at
+    `).run(url, provider || 'gsc', propertySnapshot ?? null, Date.now());
+}
+
+
 export function getProvider(id) {
     return getDb().prepare('SELECT * FROM providers WHERE id = ?').get(id);
 }
@@ -239,6 +280,7 @@ export function deleteSnapshotsForUrl(url) {
         }
         getDb().prepare('DELETE FROM snapshots WHERE url = ?').run(url);
         getDb().prepare('DELETE FROM analytics_data WHERE url = ?').run(url);
+        getDb().prepare('DELETE FROM analytics_fetch_meta WHERE url = ?').run(url);
     });
     tx();
 }
