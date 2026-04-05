@@ -253,7 +253,7 @@ export class SyncLogViewer extends LitElement {
                     </span>
                 </div>
                 <div class="py-1">
-                    ${group.entries.map(
+                    ${group.entries.slice().reverse().map(
                         (e) => this._renderEntry(e)
                     )}
                 </div>
@@ -289,7 +289,7 @@ export class SyncLogViewer extends LitElement {
         return html`
             <style>
                 @keyframes logSlideIn {
-                    from { opacity: 0; transform: translateY(4px); }
+                    from { opacity: 0; transform: translateY(-4px); }
                     to   { opacity: 1; transform: translateY(0); }
                 }
             </style>

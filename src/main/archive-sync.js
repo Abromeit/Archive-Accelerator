@@ -35,7 +35,7 @@ export async function syncUrl(url, onProgress, onLog) {
     onProgress(progress);
 
     log('info', 'discovering', `Starting sync for ${url}`);
-    log('info', 'discovering', 'Querying Wayback Machine CDX index…');
+    log('info', 'discovering', 'Querying Wayback Machine CDX index — this may take a minute…');
 
     let cdxEntries, boundaryEntries;
     try {
