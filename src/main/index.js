@@ -9,6 +9,8 @@ import { syncAnalytics } from './gsc-api.js';
 import { startOAuthFlow, loadCredentials } from './gsc-auth.js';
 import { computeAllDiffs } from './diff-engine.js';
 
+app.name = 'Archive Accelerator';
+
 let mainWindow = null;
 
 function createWindow() {
