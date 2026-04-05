@@ -29,6 +29,7 @@ export class HtmlViewer extends LitElement {
         _searchQuery: { state: true },
         _matchCount: { state: true },
         _currentMatchIdx: { state: true },
+        _matchesCapped: { state: true },
     };
 
     createRenderRoot() {
@@ -47,6 +48,72 @@ export class HtmlViewer extends LitElement {
         this._searchQuery = '';
         this._matchCount = 0;
         this._currentMatchIdx = -1;
+        this._matchesCapped = false;
+        this._searchDebounceTimer = null;
+        this._boundDocKeydown = null;
+    }
+
+    connectedCallback() {
+        super.connectedCallback();
+        this._boundDocKeydown = this._onDocumentKeydown.bind(this);
+        document.addEventListener('keydown', this._boundDocKeydown, true);
+    }
+
+    disconnectedCallback() {
+        if (this._boundDocKeydown) {
+            document.removeEventListener('keydown', this._boundDocKeydown, true);
+            this._boundDocKeydown = null;
+        }
+        super.disconnectedCallback();
+    }
+
+    /**
+     * Cmd+F / Ctrl+F focus search; Cmd+G / Ctrl+G next match (Web page tab only).
+     *
+     * @param {KeyboardEvent} e - Keyboard event (document capture).
+     */
+    _onDocumentKeydown(e) {
+        const mod = e.metaKey || e.ctrlKey;
+        if (!mod || e.altKey) {
+            return;
+        }
+        const key = e.key.toLowerCase();
+        if (key !== 'f' && key !== 'g') {
+            return;
+        }
+
+        const t = e.target;
+        let outsideViewer = false;
+        if (t instanceof Element) {
+            const field = t.closest('input, textarea, select, [contenteditable="true"]');
+            if (field && !this.contains(field)) {
+                const inUrlBar = field.closest('url-input');
+                if (!inUrlBar) {
+                    outsideViewer = true;
+                }
+            }
+        }
+
+        if (key === 'f') {
+            if (outsideViewer) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            const input = this.querySelector('.html-viewer-search-input');
+            if (input) {
+                input.focus();
+                input.select();
+            }
+            return;
+        }
+
+        if (outsideViewer) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        this._nextMatch();
     }
 
     updated(changed) {
@@ -158,6 +225,7 @@ export class HtmlViewer extends LitElement {
         if (!query) {
             this._matchCount = 0;
             this._currentMatchIdx = -1;
+            this._matchesCapped = false;
             return;
         }
 
@@ -170,13 +238,15 @@ export class HtmlViewer extends LitElement {
             textNodes.push(walker.currentNode);
         }
 
-        for (let i = 0, i_max = textNodes.length; i < i_max; ++i) {
+        const MAX_MATCHES = 1000;
+
+        for (let i = 0, i_max = textNodes.length; i < i_max && matches.length < MAX_MATCHES; ++i) {
             const node = textNodes[i];
             const text = node.textContent;
             const lowerText = text.toLowerCase();
             let startPos = 0;
 
-            while (true) {
+            while (matches.length < MAX_MATCHES) {
                 const idx = lowerText.indexOf(lowerQuery, startPos);
                 if (idx === -1) break;
                 matches.push({ node, offset: idx, length: query.length });
@@ -196,6 +266,7 @@ export class HtmlViewer extends LitElement {
             range.surroundContents(mark);
         }
 
+        this._matchesCapped = matches.length >= MAX_MATCHES;
         this._matchCount = matches.length;
         if (matches.length > 0) {
             this._currentMatchIdx = 0;
@@ -227,7 +298,15 @@ export class HtmlViewer extends LitElement {
     }
 
     _handleSearchInput(e) {
-        this._searchQuery = e.target.value;
+        const value = e.target.value;
+        clearTimeout(this._searchDebounceTimer);
+        if (!value) {
+            this._searchQuery = '';
+            return;
+        }
+        this._searchDebounceTimer = setTimeout(() => {
+            this._searchQuery = value;
+        }, 250);
     }
 
     _handleSearchKeydown(e) {
@@ -240,6 +319,7 @@ export class HtmlViewer extends LitElement {
             }
         }
         if (e.key === 'Escape') {
+            clearTimeout(this._searchDebounceTimer);
             this._searchQuery = '';
             e.target.value = '';
         }
@@ -298,17 +378,16 @@ export class HtmlViewer extends LitElement {
                             <input
                                 type="text"
                                 placeholder="Search…"
-                                .value=${this._searchQuery}
+                                class="html-viewer-search-input bg-transparent border-none outline-none
+                                       text-xs text-text-primary placeholder:text-text-muted w-full"
                                 @input=${this._handleSearchInput}
                                 @keydown=${this._handleSearchKeydown}
-                                class="bg-transparent border-none outline-none text-xs text-text-primary
-                                       placeholder:text-text-muted w-full"
                             />
                             ${this._searchQuery
                                 ? html`
                                     <span class="text-[10px] text-text-muted flex-shrink-0 tabular-nums">
                                         ${this._matchCount > 0
-                                            ? `${this._currentMatchIdx + 1}/${this._matchCount}`
+                                            ? `${this._currentMatchIdx + 1}/${this._matchesCapped ? `>${this._matchCount}` : this._matchCount}`
                                             : '0/0'
                                         }
                                     </span>
