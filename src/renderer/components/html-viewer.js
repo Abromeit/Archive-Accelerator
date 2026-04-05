@@ -51,6 +51,7 @@ export class HtmlViewer extends LitElement {
         this._matchesCapped = false;
         this._searchDebounceTimer = null;
         this._boundDocKeydown = null;
+        this._iframeShortcutDoc = null;
     }
 
     connectedCallback() {
@@ -60,11 +61,36 @@ export class HtmlViewer extends LitElement {
     }
 
     disconnectedCallback() {
+        this._detachIframeSearchShortcuts();
         if (this._boundDocKeydown) {
             document.removeEventListener('keydown', this._boundDocKeydown, true);
             this._boundDocKeydown = null;
         }
         super.disconnectedCallback();
+    }
+
+    _detachIframeSearchShortcuts() {
+        if (this._iframeShortcutDoc && this._boundDocKeydown) {
+            try {
+                this._iframeShortcutDoc.removeEventListener('keydown', this._boundDocKeydown, true);
+            } catch {
+                // Document may be torn down.
+            }
+        }
+        this._iframeShortcutDoc = null;
+    }
+
+    _attachIframeSearchShortcuts() {
+        const doc = this._getIframeDoc();
+        if (!doc || !this._boundDocKeydown) {
+            return;
+        }
+        if (this._iframeShortcutDoc === doc) {
+            return;
+        }
+        this._detachIframeSearchShortcuts();
+        doc.addEventListener('keydown', this._boundDocKeydown, true);
+        this._iframeShortcutDoc = doc;
     }
 
     /**
@@ -86,10 +112,14 @@ export class HtmlViewer extends LitElement {
         let outsideViewer = false;
         if (t instanceof Element) {
             const field = t.closest('input, textarea, select, [contenteditable="true"]');
-            if (field && !this.contains(field)) {
-                const inUrlBar = field.closest('url-input');
-                if (!inUrlBar) {
-                    outsideViewer = true;
+            if (field && !field.closest('url-input')) {
+                if (this.contains(field)) {
+                    outsideViewer = false;
+                } else {
+                    const iframeDoc = this._getIframeDoc();
+                    if (!(iframeDoc && field.ownerDocument === iframeDoc)) {
+                        outsideViewer = true;
+                    }
                 }
             }
         }
@@ -119,6 +149,9 @@ export class HtmlViewer extends LitElement {
     updated(changed) {
         if (changed.has('snapshot')) {
             this._loadContent();
+        }
+        if (changed.has('_viewMode') && this._viewMode !== 'browser') {
+            this._detachIframeSearchShortcuts();
         }
         if (
             changed.has('_viewMode') || changed.has('_searchQuery')
@@ -541,7 +574,12 @@ export class HtmlViewer extends LitElement {
                 class="flex-1 w-full rounded-lg border border-surface-3 bg-surface-1"
                 .srcdoc=${iframeContent}
                 sandbox="allow-same-origin"
-                @load=${() => { if (this._searchQuery) this._highlightInIframe(this._searchQuery.trim()); }}
+                @load=${() => {
+                    this._attachIframeSearchShortcuts();
+                    if (this._searchQuery) {
+                        this._highlightInIframe(this._searchQuery.trim());
+                    }
+                }}
             ></iframe>
         `;
     }
