@@ -14,6 +14,23 @@ const RE_CLASS = /\bclass\s*=\s*["']([^"']*)["']/gi;
 const RE_ID = /\bid\s*=\s*["']([^"']*)["']/gi;
 const RE_MULTI_SPACE = /\s+/g;
 
+const RE_BV_IMG_QUOTED = /<img\s[^>]*?alt\s*=\s*(['"])(.*?)\1[^>]*?\/?>/gi;
+const RE_BV_IMG_UNQUOTED = /<img\s[^>]*?alt\s*=\s*([\w-]+)[^>]*?\/?>/gi;
+const RE_BV_BLOCK = /\s*(<\/?(?:h[1-6]|p)(?:\s[^>]*)?>)\s*/gi;
+const RE_BV_INLINE = /<(\/?)(a|em|h[1-6]|strong|li)(?:\s[^>]*)?>/gi;
+const RE_BV_BR = /\s*<br(?:\s[^>]*)?\/?>\s*/gi;
+const RE_BV_STRIP = /<(?!__BV_T__|__BV_I__)[^>]*>/gi;
+const RE_BV_MARKER_CLOSE = /[\p{Zs}+\t ]*<(?:__BV_T__|__BV_I__)(\/[^>]*)>/gu;
+const RE_BV_MARKER_OPEN = /<(?:__BV_T__|__BV_I__)([^>]*)>[\p{Zs}+\t ]*/gu;
+const RE_BV_HSPACE = /[\p{Zs}\t ]+/gu;
+const RE_BV_SP_AFTER_NL = /([\r\n]+) +/g;
+const RE_BV_SP_BEFORE_NL = / +([\r\n]+)/g;
+const RE_BV_NL_AFTER_OPEN = /(<\w[^>]*>)\s*[\r\n]+/g;
+const RE_BV_NL_BEFORE_CLOSE = /[\r\n]+\s*(<\/\w[^>]*>)/g;
+const RE_BV_MULTI_BLANK = /[\r ]*?\n(?:[\r ]*?\n)+/g;
+const RE_BV_TRIPLE_NL = /\n{3,}/g;
+const RE_BV_CLOSE_SELF = /<(\/[^>]*|[^>]*\/)>/g;
+
 
 export function getHead(html) {
     const match = html.match(RE_HEAD_SPLIT);
@@ -109,6 +126,42 @@ export function extractClassesAndIds(html) {
 }
 
 
+export function extractBotview(html) {
+    let text = getBody(html);
+
+    text = text.replace(RE_COMMENTS, ' ');
+    text = text.replace(RE_SCRIPT_STYLE, ' ');
+
+    text = text.replace(RE_BV_IMG_QUOTED, ' <__BV_I__img alt="$2" /> ');
+    text = text.replace(RE_BV_IMG_UNQUOTED, ' <__BV_I__img alt="$1" /> ');
+
+    text = text.replace(RE_BV_BLOCK, '\n$1\n');
+
+    text = text.replace(RE_BV_INLINE, ' <__BV_T__$1$2> ');
+
+    text = text.replace(RE_BV_BR, '\n');
+
+    text = text.replace(RE_BV_STRIP, ' ');
+
+    text = text.replace(RE_BV_MARKER_CLOSE, '<$1>');
+    text = text.replace(RE_BV_MARKER_OPEN, '<$1>');
+
+    text = decodeHtmlEntities(text);
+
+    text = text.replace(RE_BV_HSPACE, ' ');
+    text = text.replace(RE_BV_SP_AFTER_NL, '$1');
+    text = text.replace(RE_BV_SP_BEFORE_NL, '$1');
+    text = text.replace(RE_BV_NL_AFTER_OPEN, '$1');
+    text = text.replace(RE_BV_NL_BEFORE_CLOSE, '$1');
+    text = text.replace(RE_BV_MULTI_BLANK, '\n\n');
+    text = text.replace(RE_BV_TRIPLE_NL, '\n\n');
+    text = text.replace(RE_BV_CLOSE_SELF, '<$1> ');
+    text = text.replace(/></g, '> <');
+
+    return text.trim();
+}
+
+
 export function parseSnapshot(html) {
     return {
         title: extractTitle(html),
@@ -116,6 +169,7 @@ export function parseSnapshot(html) {
         plaintext: extractPlaintext(html),
         headlines_json: JSON.stringify(extractHeadlines(html)),
         classes_ids_json: JSON.stringify(extractClassesAndIds(html)),
+        botview: extractBotview(html),
     };
 }
 

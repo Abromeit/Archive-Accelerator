@@ -185,6 +185,7 @@ function storeSnapshot(url, date, source, digest, html) {
         meta_description: parsed.meta_description,
         headlines_json: parsed.headlines_json,
         classes_ids_json: parsed.classes_ids_json,
+        botview: parsed.botview,
     });
 }
 

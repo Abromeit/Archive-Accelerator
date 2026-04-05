@@ -214,13 +214,19 @@ export class AppShell extends LitElement {
                 `;
             case 1:
                 return html`
+                    <botview-viewer
+                        .snapshot=${this.selectedSnapshot}
+                    ></botview-viewer>
+                `;
+            case 2:
+                return html`
                     <diff-viewer
                         .snapshot=${this.selectedSnapshot}
                         .comparisonSnapshot=${this.comparisonSnapshot}
                         .liveSnapshot=${this.snapshots[0]}
                     ></diff-viewer>
                 `;
-            case 2:
+            case 3:
                 return html`
                     <serp-preview
                         .snapshot=${this.selectedSnapshot}
@@ -228,7 +234,7 @@ export class AppShell extends LitElement {
                         .liveSnapshot=${this.snapshots[0]}
                     ></serp-preview>
                 `;
-            case 3:
+            case 4:
                 return html`
                     <analytics-chart
                         .currentUrl=${this.currentUrl}

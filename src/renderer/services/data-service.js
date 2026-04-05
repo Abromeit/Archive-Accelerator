@@ -8,6 +8,11 @@ export async function getSnapshotContent(id) {
 }
 
 
+export async function getSnapshotBotview(id) {
+    return await window.api.getSnapshotBotview(id);
+}
+
+
 export async function getPageInfo(url) {
     return await window.api.getPageInfo(url);
 }

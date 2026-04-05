@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import { join } from 'node:path';
 import { config } from 'dotenv';
 import { buildMenu } from './menu.js';
-import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getPageInfo, getAllUrls, getAnalyticsData, getAllProviders, disconnectProvider, getSetting, setSetting, deleteSnapshotsForUrl } from './db.js';
+import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getSnapshotBotview, getPageInfo, getAllUrls, getAnalyticsData, getAllProviders, disconnectProvider, getSetting, setSetting, deleteSnapshotsForUrl } from './db.js';
 import { decompressToString } from './compression.js';
 import { syncUrl } from './archive-sync.js';
 import { syncAnalytics } from './gsc-api.js';
@@ -103,6 +103,11 @@ ipcMain.handle('get-snapshot-content', function (_event, id) {
     const compressed = getSnapshotHtml(id);
     if (!compressed) return null;
     return decompressToString(compressed);
+});
+
+
+ipcMain.handle('get-snapshot-botview', function (_event, id) {
+    return getSnapshotBotview(id);
 });
 
 

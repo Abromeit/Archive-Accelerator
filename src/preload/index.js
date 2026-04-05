@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('api', {
         return ipcRenderer.invoke('get-snapshot-content', id);
     },
 
+    getSnapshotBotview: function (id) {
+        return ipcRenderer.invoke('get-snapshot-botview', id);
+    },
+
     getPageInfo: function (url) {
         return ipcRenderer.invoke('get-page-info', url);
     },

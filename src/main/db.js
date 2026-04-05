@@ -93,13 +93,19 @@ function migrate() {
             PRIMARY KEY (url, provider)
         );
     `);
+
+    try {
+        db.exec('ALTER TABLE snapshots ADD COLUMN botview TEXT');
+    } catch (_e) {
+        // Column already exists
+    }
 }
 
 
 export function insertSnapshot(row) {
     const stmt = getDb().prepare(`
-        INSERT INTO snapshots (url, date, source, digest, html_compressed, plaintext, title, meta_description, headlines_json, classes_ids_json)
-        VALUES (@url, @date, @source, @digest, @html_compressed, @plaintext, @title, @meta_description, @headlines_json, @classes_ids_json)
+        INSERT INTO snapshots (url, date, source, digest, html_compressed, plaintext, title, meta_description, headlines_json, classes_ids_json, botview)
+        VALUES (@url, @date, @source, @digest, @html_compressed, @plaintext, @title, @meta_description, @headlines_json, @classes_ids_json, @botview)
     `);
     return stmt.run(row);
 }
@@ -134,6 +140,13 @@ export function getSnapshotHtml(id) {
     const row = getDb().prepare('SELECT html_compressed FROM snapshots WHERE id = ?').get(id);
     return row ? row.html_compressed : null;
 }
+
+
+export function getSnapshotBotview(id) {
+    const row = getDb().prepare('SELECT botview FROM snapshots WHERE id = ?').get(id);
+    return row ? row.botview : null;
+}
+
 
 
 export function getSnapshotById(id) {
@@ -312,8 +325,8 @@ export function getPageInfo(url) {
 
 export function bulkInsertSnapshots(rows) {
     const stmt = getDb().prepare(`
-        INSERT INTO snapshots (url, date, source, digest, html_compressed, plaintext, title, meta_description, headlines_json, classes_ids_json)
-        VALUES (@url, @date, @source, @digest, @html_compressed, @plaintext, @title, @meta_description, @headlines_json, @classes_ids_json)
+        INSERT INTO snapshots (url, date, source, digest, html_compressed, plaintext, title, meta_description, headlines_json, classes_ids_json, botview)
+        VALUES (@url, @date, @source, @digest, @html_compressed, @plaintext, @title, @meta_description, @headlines_json, @classes_ids_json, @botview)
     `);
     const tx = getDb().transaction(function (items) {
         const results = [];
