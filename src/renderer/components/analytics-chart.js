@@ -829,7 +829,7 @@ export class AnalyticsChart extends LitElement {
                         start: zoomStart,
                         end: zoomEnd,
                         filterMode: 'none',
-                        height: 26,
+                        height: 40,
                         bottom: 20,
                         showDetail: false,
                         showDataShadow: true,
