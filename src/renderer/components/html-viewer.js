@@ -333,6 +333,21 @@ export class HtmlViewer extends LitElement {
                     </div>
 
                     <div class="flex items-center gap-1 flex-shrink-0">
+                        ${this._viewMode === 'html'
+                            ? html`
+                                <label class="flex items-center gap-1.5 mr-3 text-xs text-text-muted
+                                              cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        .checked=${this._wrapLines}
+                                        @change=${(e) => { this._wrapLines = e.target.checked; }}
+                                        class="accent-accent-green cursor-pointer"
+                                    />
+                                    Wrap
+                                </label>
+                            `
+                            : ''
+                        }
                         <button
                             class="px-3 py-1 text-xs rounded-md transition-colors cursor-pointer
                                    ${this._viewMode === 'browser'
@@ -357,22 +372,6 @@ export class HtmlViewer extends LitElement {
                                    }"
                             @click=${() => { this._viewMode = 'text'; }}
                         >Text</button>
-
-                        ${this._viewMode === 'html'
-                            ? html`
-                                <label class="flex items-center gap-1.5 ml-3 text-xs text-text-muted
-                                              cursor-pointer select-none">
-                                    <input
-                                        type="checkbox"
-                                        .checked=${this._wrapLines}
-                                        @change=${(e) => { this._wrapLines = e.target.checked; }}
-                                        class="accent-accent-green cursor-pointer"
-                                    />
-                                    Wrap
-                                </label>
-                            `
-                            : ''
-                        }
                     </div>
                 </div>
 
