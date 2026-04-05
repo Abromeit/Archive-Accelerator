@@ -311,11 +311,9 @@ export class AnalyticsChart extends LitElement {
             impressions: true,
             position: false,
             granularity: 'daily',
-            iconTemplate: true,
+            iconTemplate: false,
             iconText: true,
-            iconHeadlines: true,
             iconMeta: true,
-            iconTitle: true,
         };
         this._loadPrefs();
         this._analyticsData = [];
@@ -358,11 +356,9 @@ export class AnalyticsChart extends LitElement {
             impressions: true,
             position: false,
             granularity: 'daily',
-            iconTemplate: true,
+            iconTemplate: false,
             iconText: true,
-            iconHeadlines: true,
             iconMeta: true,
-            iconTitle: true,
             ...stored,
         };
         const g = this._prefs.granularity;
@@ -409,27 +405,14 @@ export class AnalyticsChart extends LitElement {
 
     _toggleIcon(iconType) {
         const key = 'icon' + iconType.charAt(0).toUpperCase() + iconType.slice(1);
-        const newVal = !this._prefs[key];
-        const patch = { [key]: newVal };
-
-        if (iconType === 'meta') {
-            patch.iconTitle = newVal;
-        } else if (iconType === 'text') {
-            patch.iconHeadlines = newVal;
-        }
-
-        this._prefs = { ...this._prefs, ...patch };
+        this._prefs = { ...this._prefs, [key]: !this._prefs[key] };
         dataService.setChartPreferences(this._prefs);
     }
 
     _isChangeVisible(c) {
         if (c.templateChanged && this._prefs.iconTemplate) return true;
-        if (c.textChanged) {
-            if (c.headlinesChanged ? this._prefs.iconHeadlines : this._prefs.iconText) return true;
-        }
-        if (c.metaChanged) {
-            if (c.titleChanged ? this._prefs.iconTitle : this._prefs.iconMeta) return true;
-        }
+        if (c.textChanged && this._prefs.iconText) return true;
+        if (c.metaChanged && this._prefs.iconMeta) return true;
         return false;
     }
 
@@ -627,14 +610,16 @@ export class AnalyticsChart extends LitElement {
         if (!chart) {
             return;
         }
-        const onFinished = () => {
-            chart.off('finished', onFinished);
+        if (this._drawIconsRaf) {
+            cancelAnimationFrame(this._drawIconsRaf);
+        }
+        this._drawIconsRaf = requestAnimationFrame(() => {
+            this._drawIconsRaf = null;
             if (this._chart !== chart) {
                 return;
             }
             this._drawChangeIcons();
-        };
-        chart.on('finished', onFinished);
+        });
     }
 
     _updateChart() {
@@ -819,6 +804,7 @@ export class AnalyticsChart extends LitElement {
             }
 
             const option = {
+                animation: false,
                 backgroundColor: 'transparent',
                 tooltip: {
                     trigger: 'axis',
@@ -975,21 +961,9 @@ export class AnalyticsChart extends LitElement {
             }
 
             const icons = [];
-            if (c.templateChanged && this._prefs.iconTemplate) {
-                icons.push('template');
-            }
-            if (c.textChanged) {
-                const t = c.headlinesChanged ? 'headlines' : 'text';
-                if (t === 'headlines' ? this._prefs.iconHeadlines : this._prefs.iconText) {
-                    icons.push(t);
-                }
-            }
-            if (c.metaChanged) {
-                const t = c.titleChanged ? 'title' : 'meta';
-                if (t === 'title' ? this._prefs.iconTitle : this._prefs.iconMeta) {
-                    icons.push(t);
-                }
-            }
+            if (c.templateChanged && this._prefs.iconTemplate) icons.push('template');
+            if (c.textChanged && this._prefs.iconText) icons.push(c.headlinesChanged ? 'headlines' : 'text');
+            if (c.metaChanged && this._prefs.iconMeta) icons.push(c.titleChanged ? 'title' : 'meta');
             if (icons.length === 0) continue;
 
             const totalW = icons.length * S + (icons.length - 1) * GAP;
@@ -1138,12 +1112,8 @@ export class AnalyticsChart extends LitElement {
                 <div class="flex items-center gap-2 mb-2 flex-wrap">
                     <span class="text-xs text-text-muted shrink-0 w-14">Changes:</span>
                     ${this._renderIconToggle('template', 'Template')}
-                    <span class="w-px h-4 bg-neutral-700 mx-0.5"></span>
                     ${this._renderIconToggle('text', 'Text')}
-                    ${this._renderIconToggle('headlines', 'Headlines')}
-                    <span class="w-px h-4 bg-neutral-700 mx-0.5"></span>
                     ${this._renderIconToggle('meta', 'Meta')}
-                    ${this._renderIconToggle('title', 'Title tag')}
                 </div>
 
                 <!-- Metric toggles + period -->
@@ -1240,19 +1210,6 @@ export class AnalyticsChart extends LitElement {
                       stroke="currentColor" stroke-width="0.8"/>
             </svg>`;
         }
-        if (type === 'headlines') {
-            const bg = active ? '#1F1F1F' : '#2a2a2a';
-            return html`<svg width="12" height="12" viewBox="0 0 12 12">
-                <rect x="0.5" y="0.5" width="11" height="11" rx="1"
-                      fill="currentColor" stroke="none"/>
-                <rect x="2" y="3.5" width="8" height="1.5" rx="0.3"
-                      fill="${bg}"/>
-                <rect x="2" y="5.5" width="6.5" height="1.2" rx="0.3"
-                      fill="${bg}"/>
-                <rect x="2" y="7.5" width="5" height="1.2" rx="0.3"
-                      fill="${bg}"/>
-            </svg>`;
-        }
         if (type === 'meta') {
             return html`<svg width="12" height="12" viewBox="0 0 12 12">
                 <circle cx="6" cy="6" r="5"
@@ -1261,17 +1218,6 @@ export class AnalyticsChart extends LitElement {
                           fill="none" stroke="currentColor" stroke-width="1"/>
                 <line x1="7.5" y1="8.5" x2="9.5" y2="8.5"
                       stroke="currentColor" stroke-width="0.8"/>
-            </svg>`;
-        }
-        if (type === 'title') {
-            const bg = active ? '#1F1F1F' : '#2a2a2a';
-            return html`<svg width="12" height="12" viewBox="0 0 12 12">
-                <circle cx="6" cy="6" r="5"
-                        fill="currentColor" stroke="none"/>
-                <polyline points="4.5,3.5 7,6 4.5,8.5"
-                          fill="none" stroke="${bg}" stroke-width="1.2"/>
-                <line x1="7.5" y1="8.5" x2="9.5" y2="8.5"
-                      stroke="${bg}" stroke-width="1.2"/>
             </svg>`;
         }
         return html``;
