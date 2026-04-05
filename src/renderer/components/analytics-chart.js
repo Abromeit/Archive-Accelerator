@@ -2,6 +2,72 @@ import { LitElement, html } from 'lit';
 import * as echarts from 'echarts';
 import * as dataService from '../services/data-service.js';
 
+const MONTH_SHORT = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+
+function parseYmd(dateStr) {
+    const parts = dateStr.split('-');
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    return new Date(y, m, day);
+}
+
+
+function formatYmd(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
+
+/**
+ * Bucket start for weekly (Monday) / monthly (calendar month) / daily.
+ * Position aggregation across buckets: weighted by impressions, equivalent to
+ * SUM(sum_top_position)/SUM(impressions)+1 when using per-row (position-1)*impressions.
+ */
+function bucketKeyForGranularity(dateStr, granularity) {
+    if (granularity === 'daily') {
+        return dateStr;
+    }
+    const d = parseYmd(dateStr);
+    if (granularity === 'monthly') {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+    if (granularity === 'weekly') {
+        const mondayOffset = (d.getDay() + 6) % 7;
+        d.setDate(d.getDate() - mondayOffset);
+        return formatYmd(d);
+    }
+    return dateStr;
+}
+
+
+function formatXAxisLabel(val, granularity) {
+    if (granularity === 'daily') {
+        return val;
+    }
+    if (granularity === 'monthly') {
+        const parts = val.split('-');
+        if (parts.length >= 2) {
+            const y = parts[0];
+            const mi = parseInt(parts[1], 10) - 1;
+            return `${MONTH_SHORT[mi]} ${y}`;
+        }
+        return val;
+    }
+    if (granularity === 'weekly') {
+        const d = parseYmd(val);
+        return `Wk ${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
+    }
+    return val;
+}
+
+
 export class AnalyticsChart extends LitElement {
     static properties = {
         currentUrl: { type: String },
@@ -22,7 +88,12 @@ export class AnalyticsChart extends LitElement {
         this.currentUrl = '';
         this.snapshots = [];
         this._connected = false;
-        this._prefs = { clicks: true, impressions: true, position: false };
+        this._prefs = {
+            clicks: true,
+            impressions: true,
+            position: false,
+            granularity: 'daily',
+        };
         this._loadPrefs();
         this._analyticsData = [];
         this._analyticsLoading = false;
@@ -56,7 +127,18 @@ export class AnalyticsChart extends LitElement {
     }
 
     async _loadPrefs() {
-        this._prefs = await dataService.getChartPreferences();
+        const stored = await dataService.getChartPreferences();
+        this._prefs = {
+            clicks: true,
+            impressions: true,
+            position: false,
+            granularity: 'daily',
+            ...stored,
+        };
+        const g = this._prefs.granularity;
+        if (g !== 'daily' && g !== 'weekly' && g !== 'monthly') {
+            this._prefs = { ...this._prefs, granularity: 'daily' };
+        }
     }
 
     async _checkConnection() {
@@ -112,6 +194,114 @@ export class AnalyticsChart extends LitElement {
             }));
     }
 
+
+    _aggregateAnalyticsData(rows, granularity) {
+        if (granularity === 'daily') {
+            return rows.map(function (r) {
+                return {
+                    date: r.date,
+                    clicks: r.clicks,
+                    impressions: r.impressions,
+                    position: r.position,
+                };
+            });
+        }
+
+        const groups = new Map();
+        for (let i = 0, n = rows.length; i < n; ++i) {
+            const row = rows[i];
+            const key = bucketKeyForGranularity(row.date, granularity);
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    clicks: 0,
+                    impressions: 0,
+                    sumPositionTimesImpressions: 0,
+                });
+            }
+            const g = groups.get(key);
+            const clicks = row.clicks || 0;
+            const impr = row.impressions || 0;
+            g.clicks += clicks;
+            g.impressions += impr;
+            if (impr > 0 && row.position != null && !Number.isNaN(row.position)) {
+                g.sumPositionTimesImpressions += row.position * impr;
+            }
+        }
+
+        const keys = Array.from(groups.keys()).sort();
+        const out = [];
+        for (let i = 0, i_max = keys.length; i < i_max; ++i) {
+            const key = keys[i];
+            const g = groups.get(key);
+            let pos = null;
+            if (g.impressions > 0 && g.sumPositionTimesImpressions > 0) {
+                pos = Math.round((g.sumPositionTimesImpressions / g.impressions) * 10) / 10;
+            }
+            out.push({
+                date: key,
+                clicks: g.clicks,
+                impressions: g.impressions,
+                position: pos,
+            });
+        }
+        return out;
+    }
+
+
+    _mergeChangesForGranularity(changes, granularity) {
+        if (granularity === 'daily') {
+            return changes.map(function (c) {
+                return {
+                    date: c.date,
+                    dates: [c.date],
+                    templateChanged: !!c.templateChanged,
+                    textChanged: !!c.textChanged,
+                    headlinesChanged: !!c.headlinesChanged,
+                    metaChanged: !!c.metaChanged,
+                    titleChanged: !!c.titleChanged,
+                };
+            });
+        }
+
+        const map = new Map();
+        for (let i = 0, n = changes.length; i < n; ++i) {
+            const c = changes[i];
+            const key = bucketKeyForGranularity(c.date, granularity);
+            if (!map.has(key)) {
+                map.set(key, {
+                    date: key,
+                    dates: [c.date],
+                    templateChanged: !!c.templateChanged,
+                    textChanged: !!c.textChanged,
+                    headlinesChanged: !!c.headlinesChanged,
+                    metaChanged: !!c.metaChanged,
+                    titleChanged: !!c.titleChanged,
+                });
+            } else {
+                const m = map.get(key);
+                m.templateChanged = m.templateChanged || c.templateChanged;
+                m.textChanged = m.textChanged || c.textChanged;
+                m.headlinesChanged = m.headlinesChanged || c.headlinesChanged;
+                m.metaChanged = m.metaChanged || c.metaChanged;
+                m.titleChanged = m.titleChanged || c.titleChanged;
+                if (m.dates.indexOf(c.date) === -1) {
+                    m.dates.push(c.date);
+                }
+            }
+        }
+        return Array.from(map.values());
+    }
+
+
+    _onGranularityChange(e) {
+        const g = e.target.value;
+        if (g !== 'daily' && g !== 'weekly' && g !== 'monthly') {
+            return;
+        }
+        this._prefs = { ...this._prefs, granularity: g };
+        dataService.setChartPreferences(this._prefs);
+    }
+
     _initChart() {
         const container = this.querySelector('#analytics-chart-container');
         if (!container) return;
@@ -153,10 +343,15 @@ export class AnalyticsChart extends LitElement {
             }
             if (!this._chart) return;
 
-            const dates = this._analyticsData.map((d) => d.date);
-            const changes = this._getSnapshotChanges();
+            const granularity = this._prefs.granularity || 'daily';
+            const displayData = this._aggregateAnalyticsData(this._analyticsData, granularity);
+            const dates = displayData.map((d) => d.date);
+            const changesMerged = this._mergeChangesForGranularity(
+                this._getSnapshotChanges(),
+                granularity,
+            );
 
-            const markLineData = changes
+            const markLineData = changesMerged
                 .filter((c) => dates.includes(c.date))
                 .map((c) => ({
                     xAxis: c.date,
@@ -229,8 +424,8 @@ export class AnalyticsChart extends LitElement {
                     name: 'Clicks',
                     type: 'line',
                     yAxisIndex: idxClick,
-                    data: this._analyticsData.map((d) => d.clicks),
-                    smooth: true,
+                    data: displayData.map((d) => d.clicks),
+                    smooth: false,
                     symbol: 'none',
                     lineStyle: { color: '#34d399', width: 2 },
                     itemStyle: { color: '#34d399' },
@@ -249,8 +444,8 @@ export class AnalyticsChart extends LitElement {
                     name: 'Impressions',
                     type: 'line',
                     yAxisIndex: idxImpr,
-                    data: this._analyticsData.map((d) => d.impressions),
-                    smooth: true,
+                    data: displayData.map((d) => d.impressions),
+                    smooth: false,
                     symbol: 'none',
                     lineStyle: { color: '#60a5fa', width: 2 },
                     itemStyle: { color: '#60a5fa' },
@@ -269,8 +464,8 @@ export class AnalyticsChart extends LitElement {
                     name: 'Position',
                     type: 'line',
                     yAxisIndex: idxPos,
-                    data: this._analyticsData.map((d) => d.position),
-                    smooth: true,
+                    data: displayData.map((d) => d.position),
+                    smooth: false,
                     symbol: 'none',
                     lineStyle: { color: '#fbbf24', width: 2 },
                     itemStyle: { color: '#fbbf24' },
@@ -282,7 +477,7 @@ export class AnalyticsChart extends LitElement {
                 series[0].markLine = { data: markLineData, silent: true, symbol: ['none', 'none'] };
             }
 
-            const changeDates = changes.filter((c) => dates.includes(c.date));
+            const changeDates = changesMerged.filter((c) => dates.includes(c.date));
             this._pendingChangeIcons = changeDates.length > 0 ? { changeDates, dates } : null;
 
             let gridLeft = 60;
@@ -316,7 +511,7 @@ export class AnalyticsChart extends LitElement {
                     axisLabel: {
                         color: '#737373',
                         fontSize: 10,
-                        formatter: (val) => val,
+                        formatter: (val) => formatXAxisLabel(val, granularity),
                     },
                     axisTick: { show: false },
                 },
@@ -390,7 +585,11 @@ export class AnalyticsChart extends LitElement {
                 const cx = sx + S / 2;
                 const cy = baseY + S / 2 + iconYOffset;
                 const h = S / 2;
-                const tipText = `${c.date}\n${LABELS[type]}`;
+                const dateLine =
+                    c.dates && c.dates.length > 0
+                        ? c.dates.slice().sort().join(', ')
+                        : c.date;
+                const tipText = `${dateLine}\n${LABELS[type]}`;
                 const children = [];
 
                 children.push({
@@ -477,14 +676,30 @@ export class AnalyticsChart extends LitElement {
             `;
         }
 
+        const g = this._prefs.granularity || 'daily';
         return html`
             <div class="h-full flex flex-col">
-                <!-- Metric toggles -->
-                <div class="flex items-center gap-2 mb-4">
-                    <span class="text-xs text-text-muted mr-2">Metrics:</span>
-                    ${this._renderToggle('clicks', 'Clicks', 'bg-accent-green/20 text-accent-green')}
-                    ${this._renderToggle('impressions', 'Impressions', 'bg-accent-blue/20 text-accent-blue')}
-                    ${this._renderToggle('position', 'Position', 'bg-accent-amber/20 text-accent-amber')}
+                <!-- Metric toggles + period -->
+                <div class="flex items-center justify-between gap-4 mb-4 flex-wrap">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-text-muted mr-2">Metrics:</span>
+                        ${this._renderToggle('clicks', 'Clicks', 'bg-accent-green/20 text-accent-green')}
+                        ${this._renderToggle('impressions', 'Impressions', 'bg-accent-blue/20 text-accent-blue')}
+                        ${this._renderToggle('position', 'Position', 'bg-accent-amber/20 text-accent-amber')}
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-text-muted" for="chart-granularity">Period:</label>
+                        <select
+                            id="chart-granularity"
+                            class="bg-surface-2 border border-neutral-700 text-text-secondary text-xs rounded-md px-2 py-1 pr-8 cursor-pointer max-w-[11rem]"
+                            .value=${g}
+                            @change=${(e) => this._onGranularityChange(e)}
+                        >
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
+                    </div>
                 </div>
 
                 ${this._analyticsLoading

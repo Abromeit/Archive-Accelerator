@@ -182,7 +182,7 @@ ipcMain.handle('get-chart-preferences', function () {
             // ignore
         }
     }
-    return { clicks: true, impressions: true, position: false };
+    return { clicks: true, impressions: true, position: false, granularity: 'daily' };
 });
 
 
