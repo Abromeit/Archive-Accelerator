@@ -22,11 +22,21 @@ export async function syncUrl(url, onProgress) {
     const progress = { url, current: 0, total: 0, done: false, phase: 'discovering' };
     onProgress(progress);
 
-    const cdxEntries = await fetchCdxEntries(url);
-    const existingDates = new Set(getExistingDatesForUrl(url, 'wayback'));
+    const [cdxEntries, boundaryEntries] = await Promise.all([
+        fetchCdxEntries(url),
+        fetchBoundaryEntries(url),
+    ]);
 
-    const toDownload = cdxEntries.filter(function (entry) {
-        return !existingDates.has(timestampToDate(entry.timestamp));
+    const existingDates = new Set(getExistingDatesForUrl(url, 'wayback'));
+    const seen = new Set();
+
+    const toDownload = cdxEntries.concat(boundaryEntries).filter(function (entry) {
+        const date = timestampToDate(entry.timestamp);
+        if (existingDates.has(date) || seen.has(date)) {
+            return false;
+        }
+        seen.add(date);
+        return true;
     });
 
     progress.total = toDownload.length + 1;
@@ -81,6 +91,51 @@ async function fetchCdxEntries(url) {
     return rows.slice(1).map(function (row) {
         return { timestamp: row[0], digest: row[1], statuscode: row[2] };
     });
+}
+
+
+/**
+ * Fetch full (uncollapsed) CDX timeline and return the last capture before each digest change.
+ * These "boundary" snapshots narrow the uncertainty window for when a change actually happened.
+ */
+async function fetchBoundaryEntries(url) {
+    const params = new URLSearchParams({
+        url,
+        output: 'json',
+        fl: 'timestamp,digest,statuscode',
+        filter: 'statuscode:200',
+    });
+
+    let response;
+    try {
+        response = await fetchWithRetry(`${CDX_BASE}?${params.toString()}`);
+    } catch (err) {
+        console.error('Boundary CDX fetch failed:', err.message);
+        return [];
+    }
+
+    const text = await response.text();
+    if (!text.trim()) {
+        return [];
+    }
+
+    const rows = JSON.parse(text);
+    if (rows.length <= 2) {
+        return [];
+    }
+
+    const entries = rows.slice(1);
+    const boundaries = [];
+    for (let i = 0, i_max = entries.length - 1; i < i_max; ++i) {
+        if (entries[i][1] !== entries[i + 1][1]) {
+            boundaries.push({
+                timestamp: entries[i][0],
+                digest: entries[i][1],
+                statuscode: entries[i][2],
+            });
+        }
+    }
+    return boundaries;
 }
 
 
