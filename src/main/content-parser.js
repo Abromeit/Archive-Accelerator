@@ -1,11 +1,11 @@
 import { decodeHTML } from 'entities';
+import { parse as parse5 } from 'parse5';
 
 const RE_HEAD_SPLIT = /<body(?:\s[^>]*)?>/i;
 const RE_BODY_END = /<\/body\s*>/i;
 const RE_TITLE = /<title[^>]*>([\s\S]*?)<\/title>/i;
 const RE_META_DESC = /<meta\s[^>]*name\s*=\s*["']?description["']?[^>]*content\s*=\s*["']([\s\S]*?)["'][^>]*\/?>/i;
 const RE_META_DESC_ALT = /<meta\s[^>]*content\s*=\s*["']([\s\S]*?)["'][^>]*name\s*=\s*["']?description["']?[^>]*\/?>/i;
-const RE_HEADLINES = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
 const RE_IMG_ALT = /<img\s[^>]*alt\s*=\s*["']([^"']*)["'][^>]*\/?>/gi;
 const RE_SCRIPT_STYLE = /<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi;
 const RE_COMMENTS = /<!--[\s\S]*?-->/g;
@@ -89,18 +89,36 @@ export function extractPlaintext(html) {
 
 
 export function extractHeadlines(html) {
-    const body = getBody(html);
+    const doc = parse5(html);
     const headlines = [];
-    let match;
 
-    RE_HEADLINES.lastIndex = 0;
-    while ((match = RE_HEADLINES.exec(body)) !== null) {
-        headlines.push({
-            level: parseInt(match[1], 10),
-            text: decodeHtmlEntities(stripTags(match[2]).replace(RE_MULTI_SPACE, ' ')).trim(),
-        });
+    function walk(node) {
+        if (/^h[1-6]$/.test(node.nodeName || '')) {
+            headlines.push({
+                level: parseInt(node.nodeName[1], 10),
+                text: getTreeText(node).replace(RE_MULTI_SPACE, ' ').trim(),
+            });
+            return;
+        }
+        const children = node.childNodes || [];
+        for (let i = 0, i_max = children.length; i < i_max; ++i) {
+            walk(children[i]);
+        }
     }
+
+    walk(doc);
     return headlines;
+}
+
+
+function getTreeText(node) {
+    if (node.nodeName === '#text') return node.value || '';
+    const children = node.childNodes || [];
+    let result = '';
+    for (let i = 0, i_max = children.length; i < i_max; ++i) {
+        result += getTreeText(children[i]);
+    }
+    return result;
 }
 
 

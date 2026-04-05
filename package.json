@@ -19,6 +19,7 @@
         "entities": "^8.0.0",
         "highlight.js": "^11.11.1",
         "lit": "^3.0.0",
+        "parse5": "^8.0.0",
         "rapidhash-js": "^1.0.0"
     },
     "devDependencies": {

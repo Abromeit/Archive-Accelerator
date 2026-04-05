@@ -399,6 +399,28 @@ describe('extractHeadlines', function () {
         expect(headlines).toHaveLength(1);
         expect(headlines[0].text).toBe('Real');
     });
+
+    it('handles h2 inside div where </div> closes both (real-world broken HTML)', function () {
+        const html = '<html><head></head><body>' +
+            '<div class="header-main"><h2 class="font-boldest">About us.</div>' +
+            '<div class="header-sub">Long body text that should not be part of heading.</div>' +
+            '<h2>Next heading.</h2>' +
+            '</body></html>';
+        const headlines = extractHeadlines(html);
+        expect(headlines).toHaveLength(2);
+        expect(headlines[0]).toEqual({ level: 2, text: 'About us.' });
+        expect(headlines[1]).toEqual({ level: 2, text: 'Next heading.' });
+    });
+
+    it('produces identical headlines for same content with different raw nesting', function () {
+        const broken = '<html><head></head><body>' +
+            '<div class="wrap"><h2>Title.</div><div class="sub">Body text</div>' +
+            '<h3>Sub</h3></body></html>';
+        const clean = '<html><head></head><body>' +
+            '<div class="wrap"><h2>Title.</h2></div><div class="sub">Body text</div>' +
+            '<h3>Sub</h3></body></html>';
+        expect(extractHeadlines(broken)).toEqual(extractHeadlines(clean));
+    });
 });
 
 
