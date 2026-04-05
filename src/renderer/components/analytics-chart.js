@@ -318,6 +318,8 @@ export class AnalyticsChart extends LitElement {
         this._analyticsError = null;
         this._chart = null;
         this._resizeObserver = null;
+        this._chartAxisKey = null;
+        this._savedDataZoom = { start: 0, end: 100 };
     }
 
     connectedCallback() {
@@ -547,9 +549,22 @@ export class AnalyticsChart extends LitElement {
         this._destroyChart();
         this._chart = echarts.init(container, null, { renderer: 'canvas' });
 
+        const onDataZoom = () => {
+            const opt = this._chart.getOption();
+            const dz = opt.dataZoom;
+            if (Array.isArray(dz) && dz[0]) {
+                const d0 = dz[0];
+                if (typeof d0.start === 'number' && typeof d0.end === 'number') {
+                    this._savedDataZoom = { start: d0.start, end: d0.end };
+                }
+            }
+            this._scheduleDrawChangeIcons();
+        };
+        this._chart.on('datazoom', onDataZoom);
+
         this._resizeObserver = new ResizeObserver(() => {
             this._chart?.resize();
-            this._drawChangeIcons();
+            this._scheduleDrawChangeIcons();
         });
         this._resizeObserver.observe(container);
     }
@@ -563,6 +578,27 @@ export class AnalyticsChart extends LitElement {
             this._chart.dispose();
             this._chart = null;
         }
+        this._chartAxisKey = null;
+        this._savedDataZoom = { start: 0, end: 100 };
+    }
+
+    /**
+     * Defer icon layout until after ECharts has applied grid/series layout. Calling
+     * dataToPoint immediately after setOption uses stale coordinates (wrong KPI layout).
+     */
+    _scheduleDrawChangeIcons() {
+        const chart = this._chart;
+        if (!chart) {
+            return;
+        }
+        const onFinished = () => {
+            chart.off('finished', onFinished);
+            if (this._chart !== chart) {
+                return;
+            }
+            this._drawChangeIcons();
+        };
+        chart.on('finished', onFinished);
     }
 
     _updateChart() {
@@ -584,6 +620,13 @@ export class AnalyticsChart extends LitElement {
             const granularity = this._prefs.granularity || 'daily';
             const displayData = this._aggregateAnalyticsData(this._analyticsData, granularity);
             const dates = displayData.map((d) => d.date);
+            const axisKey = `${granularity}|${dates.length}|${dates[0] ?? ''}|${dates[dates.length - 1] ?? ''}`;
+            if (this._chartAxisKey !== axisKey) {
+                this._chartAxisKey = axisKey;
+                this._savedDataZoom = { start: 0, end: 100 };
+            }
+            const zoomStart = this._savedDataZoom.start;
+            const zoomEnd = this._savedDataZoom.end;
             const changesMerged = this._mergeChangesForGranularity(
                 this._getSnapshotChanges(),
                 granularity,
@@ -752,9 +795,45 @@ export class AnalyticsChart extends LitElement {
                     top: 30,
                     right: showPos ? 60 : 20,
                     left: gridLeft,
-                    bottom: 16,
+                    bottom: 76,
                     containLabel: true,
                 },
+                dataZoom: [
+                    {
+                        type: 'slider',
+                        xAxisIndex: 0,
+                        start: zoomStart,
+                        end: zoomEnd,
+                        filterMode: 'none',
+                        height: 26,
+                        bottom: 20,
+                        showDetail: false,
+                        showDataShadow: true,
+                        brushSelect: false,
+                        borderColor: '#2a2a2a',
+                        backgroundColor: '#171717',
+                        fillerColor: 'rgba(59, 130, 246, 0.18)',
+                        handleStyle: {
+                            color: '#262626',
+                            borderColor: '#525252',
+                        },
+                        emphasis: {
+                            handleStyle: {
+                                color: '#2a2a2a',
+                                borderColor: '#60a5fa',
+                            },
+                        },
+                        dataBackground: {
+                            lineStyle: { color: 'rgba(96, 165, 250, 0.28)', width: 1 },
+                            areaStyle: { color: 'rgba(96, 165, 250, 0.04)' },
+                        },
+                        selectedDataBackground: {
+                            lineStyle: { color: 'rgba(96, 165, 250, 0.38)', width: 1 },
+                            areaStyle: { color: 'rgba(96, 165, 250, 0.08)' },
+                        },
+                        textStyle: { color: '#737373', fontSize: 10 },
+                    },
+                ],
                 xAxis: {
                     type: 'category',
                     data: dates,
@@ -765,7 +844,7 @@ export class AnalyticsChart extends LitElement {
                         interval: 0,
                         hideOverlap: false,
                         rotate: 45,
-                        margin: 24,
+                        margin: 14,
                         align: 'right',
                         verticalAlign: 'top',
                         inside: false,
@@ -778,7 +857,7 @@ export class AnalyticsChart extends LitElement {
             };
 
             this._chart.setOption(option, true);
-            this._drawChangeIcons();
+            this._scheduleDrawChangeIcons();
         });
     }
 
@@ -839,12 +918,23 @@ export class AnalyticsChart extends LitElement {
         const yExt = yAxis.scale.getExtent();
         const yMid = (yExt[0] + yExt[1]) / 2;
         const axisLineY = getGridBottomY(coordSys);
+        const plotArea = getGridArea(coordSys);
+        const EDGE_PAD = 16;
 
         for (const c of changeDates) {
             const catIdx = dates.indexOf(c.date);
             if (catIdx === -1) continue;
 
             const x = coordSys.dataToPoint([catIdx, yMid])[0];
+            if (!Number.isFinite(x)) {
+                continue;
+            }
+            if (
+                plotArea &&
+                (x < plotArea.x - EDGE_PAD || x > plotArea.x + plotArea.width + EDGE_PAD)
+            ) {
+                continue;
+            }
 
             const icons = [];
             if (c.templateChanged) icons.push('template');
