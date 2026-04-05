@@ -167,6 +167,14 @@ export class HtmlViewer extends LitElement {
         if (!query) {
             this._matchCount = 0;
             this._currentMatchIdx = -1;
+            this._matchesCapped = false;
+            if (this._viewMode === 'browser') {
+                this._highlightInIframe('');
+            } else if (this._viewMode === 'html') {
+                this._highlightInSource('');
+            } else {
+                this._highlightInText('');
+            }
             return;
         }
 
