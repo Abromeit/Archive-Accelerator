@@ -21,6 +21,29 @@ export class DiffViewer extends LitElement {
         this.mode = 'previous';
     }
 
+    updated(changed) {
+        super.updated(changed);
+        if (
+            !changed.has('snapshot')
+            && !changed.has('comparisonSnapshot')
+            && !changed.has('liveSnapshot')
+            && !changed.has('mode')
+        ) {
+            return;
+        }
+        if (!this.snapshot) {
+            return;
+        }
+        const self = this;
+        requestAnimationFrame(function scrollFirstDiff() {
+            const el = self.querySelector('[data-first-diff]');
+            if (!el) {
+                return;
+            }
+            el.scrollIntoView({ block: 'center', behavior: 'auto' });
+        });
+    }
+
     _getComparisonText() {
         if (this.mode === 'live') {
             return this.liveSnapshot?.plaintext ?? '';
@@ -52,6 +75,9 @@ export class DiffViewer extends LitElement {
 
         const parts = this._computeDiff();
         const hasPrevious = !!this.comparisonSnapshot;
+        const hasChanges = parts.some(function (p) {
+            return p.added || p.removed;
+        });
 
         return html`
             <div class="h-full flex flex-col">
@@ -77,21 +103,37 @@ export class DiffViewer extends LitElement {
                 </div>
 
                 <div class="text-xs text-text-muted mb-3">
-                    ${this.snapshot.date} vs ${this._getComparisonLabel()}
+                    ${this.snapshot.date} vs ${this._getComparisonLabel()}${hasChanges
+                        ? ''
+                        : html`<span class="text-red-400/80 pl-1"> (no changes)</span>`}
                 </div>
 
                 <div class="flex-1 overflow-auto rounded-lg border border-surface-3 bg-surface-1 select-text">
                     <div class="p-4 text-sm leading-relaxed"
                          style="white-space: pre-wrap; word-break: break-word;"
-                    >${parts.map(function (part) {
-                        if (part.added) {
-                            return html`<span style="background: rgba(46, 160, 67, 0.25); color: #7ee787; text-decoration: underline; text-decoration-color: rgba(46, 160, 67, 0.4); text-underline-offset: 2px;">${part.value}</span>`;
-                        }
-                        if (part.removed) {
-                            return html`<span style="background: rgba(248, 81, 73, 0.25); color: #ffa198; text-decoration: line-through; text-decoration-color: rgba(248, 81, 73, 0.4);">${part.value}</span>`;
-                        }
-                        return html`<span class="text-text-secondary">${part.value}</span>`;
-                    })}</div>
+                    >${(function renderParts() {
+                        let firstChangePlaced = false;
+                        return parts.map(function (part) {
+                            const isChange = part.added || part.removed;
+                            const isFirstChange = isChange && !firstChangePlaced;
+                            if (isFirstChange) {
+                                firstChangePlaced = true;
+                            }
+                            if (part.added) {
+                                return html`<span
+                                    ?data-first-diff=${isFirstChange}
+                                    style="background: rgba(46, 160, 67, 0.25); color: #7ee787; text-decoration: underline; text-decoration-color: rgba(46, 160, 67, 0.4); text-underline-offset: 2px;"
+                                >${part.value}</span>`;
+                            }
+                            if (part.removed) {
+                                return html`<span
+                                    ?data-first-diff=${isFirstChange}
+                                    style="background: rgba(248, 81, 73, 0.25); color: #ffa198; text-decoration: line-through; text-decoration-color: rgba(248, 81, 73, 0.4);"
+                                >${part.value}</span>`;
+                            }
+                            return html`<span class="text-text-secondary">${part.value}</span>`;
+                        });
+                    }())}</div>
                 </div>
             </div>
         `;
