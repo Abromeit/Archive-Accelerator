@@ -1,4 +1,3 @@
-import { decodeHTML } from 'entities';
 import { parse as parse5 } from 'parse5';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -7,68 +6,28 @@ const VOID_HTML = new Set([
     'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr',
 ]);
 
-const RE_HEAD_SPLIT = /<body(?:\s[^>]*)?>/i;
-const RE_BODY_END = /<\/body\s*>/i;
-const RE_TITLE = /<title[^>]*>([\s\S]*?)<\/title>/i;
-const RE_META_DESC = /<meta\s[^>]*name\s*=\s*["']?description["']?[^>]*content\s*=\s*["']([\s\S]*?)["'][^>]*\/?>/i;
-const RE_META_DESC_ALT = /<meta\s[^>]*content\s*=\s*["']([\s\S]*?)["'][^>]*name\s*=\s*["']?description["']?[^>]*\/?>/i;
-const RE_COMMENTS = /<!--[\s\S]*?-->/g;
-const RE_SCRIPT_STYLE = /<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi;
-const RE_ALL_TAGS = /<[^>]+>/g;
 const RE_MULTI_SPACE = /\s+/g;
 
-const RE_BV_IMG_QUOTED = /<img\s[^>]*?alt\s*=\s*(['"])(.*?)\1[^>]*?\/?>/gi;
-const RE_BV_IMG_UNQUOTED = /<img\s[^>]*?alt\s*=\s*([\w-]+)[^>]*?\/?>/gi;
-const RE_BV_BLOCK = /\s*(<\/?(?:h[1-6]|p)(?:\s[^>]*)?>)\s*/gi;
-const RE_BV_INLINE = /<(\/?)(a|em|h[1-6]|strong|li)(?:\s[^>]*)?>/gi;
-const RE_BV_BR = /\s*<br(?:\s[^>]*)?\/?>\s*/gi;
-const RE_BV_STRIP = /<(?!__BV_T__|__BV_I__)[^>]*>/gi;
-const RE_BV_MARKER_CLOSE = /[\p{Zs}+\t ]*<(?:__BV_T__|__BV_I__)(\/[^>]*)>/gu;
-const RE_BV_MARKER_OPEN = /<(?:__BV_T__|__BV_I__)([^>]*)>[\p{Zs}+\t ]*/gu;
-const RE_BV_HSPACE = /[\p{Zs}\t ]+/gu;
-const RE_BV_SP_AFTER_NL = /([\r\n]+) +/g;
-const RE_BV_SP_BEFORE_NL = / +([\r\n]+)/g;
-const RE_BV_NL_AFTER_OPEN = /(<\w[^>]*>)\s*[\r\n]+/g;
-const RE_BV_NL_BEFORE_CLOSE = /[\r\n]+\s*(<\/\w[^>]*>)/g;
-const RE_BV_MULTI_BLANK = /[\r ]*?\n(?:[\r ]*?\n)+/g;
-const RE_BV_TRIPLE_NL = /\n{3,}/g;
-const RE_BV_CLOSE_SELF = /<(\/[^>]*|[^>]*\/)>/g;
 
-
-export function getHead(html) {
-    const match = html.match(RE_HEAD_SPLIT);
-    if (!match) return html;
-    return html.slice(0, match.index);
-}
-
-
-export function getBody(html) {
-    const startMatch = RE_HEAD_SPLIT.exec(html);
-    if (!startMatch) return html;
-
-    const bodyStart = startMatch.index + startMatch[0].length;
-    const endMatch = RE_BODY_END.exec(html.slice(bodyStart));
-    if (!endMatch) return html.slice(bodyStart);
-    return html.slice(bodyStart, bodyStart + endMatch.index);
-}
-
-
-export function extractTitle(html) {
-    const head = getHead(html);
-    const match = head.match(RE_TITLE);
-    if (!match) return '';
-    return decodeHtmlEntities(stripTags(match[1])).replace(RE_MULTI_SPACE, ' ').trim();
-}
-
-
-export function extractMetaDescription(html) {
-    const head = getHead(html);
-    let match = head.match(RE_META_DESC);
-    if (!match) {
-        match = head.match(RE_META_DESC_ALT);
+export function extractTitle(html, doc) {
+    const head = findHeadNode(doc || parse5(html));
+    for (const child of head.childNodes || []) {
+        if (child.nodeName === 'title') {
+            return getTreeText(child).replace(RE_MULTI_SPACE, ' ').trim();
+        }
     }
-    if (!match) return '';
-    return decodeHtmlEntities(match[1]).trim();
+    return '';
+}
+
+
+export function extractMetaDescription(html, doc) {
+    const head = findHeadNode(doc || parse5(html));
+    for (const child of head.childNodes || []) {
+        if (child.nodeName === 'meta' && getAttr(child, 'name').toLowerCase() === 'description') {
+            return getAttr(child, 'content').trim();
+        }
+    }
+    return '';
 }
 
 
@@ -99,6 +58,20 @@ export function extractHeadlines(html, doc) {
 
     walk(body);
     return headlines;
+}
+
+
+function findHeadNode(doc) {
+    for (const child of doc.childNodes || []) {
+        if (child.nodeName === 'html') {
+            for (const el of child.childNodes || []) {
+                if (el.nodeName === 'head') {
+                    return el;
+                }
+            }
+        }
+    }
+    return doc;
 }
 
 
@@ -231,60 +204,89 @@ export function extractClassesAndIds(html, doc) {
 }
 
 
-export function extractBotview(html) {
-    let text = getBody(html);
+const BV_INLINE_TAGS = new Set(['a', 'strong', 'em', 'li']);
+const BV_BLOCK_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p']);
+const BV_SKIP_TAGS = new Set(['script', 'style', 'noscript', 'template']);
 
-    text = text.replace(RE_COMMENTS, ' ');
-    text = text.replace(RE_SCRIPT_STYLE, ' ');
-
-    text = text.replace(RE_BV_IMG_QUOTED, ' <__BV_I__img alt="$2" /> ');
-    text = text.replace(RE_BV_IMG_UNQUOTED, ' <__BV_I__img alt="$1" /> ');
-
-    text = text.replace(RE_BV_BLOCK, '\n$1\n');
-
-    text = text.replace(RE_BV_INLINE, ' <__BV_T__$1$2> ');
-
-    text = text.replace(RE_BV_BR, '\n');
-
-    text = text.replace(RE_BV_STRIP, ' ');
-
-    text = text.replace(RE_BV_MARKER_CLOSE, '<$1>');
-    text = text.replace(RE_BV_MARKER_OPEN, '<$1>');
-
-    text = decodeHtmlEntities(text);
-
-    text = text.replace(RE_BV_HSPACE, ' ');
-    text = text.replace(RE_BV_SP_AFTER_NL, '$1');
-    text = text.replace(RE_BV_SP_BEFORE_NL, '$1');
-    text = text.replace(RE_BV_NL_AFTER_OPEN, '$1');
-    text = text.replace(RE_BV_NL_BEFORE_CLOSE, '$1');
-    text = text.replace(RE_BV_MULTI_BLANK, '\n\n');
-    text = text.replace(RE_BV_TRIPLE_NL, '\n\n');
-    text = text.replace(RE_BV_CLOSE_SELF, '<$1> ');
-    text = text.replace(/></g, '> <');
-
+export function extractBotview(html, doc) {
+    const body = findBodyNode(doc || parse5(html));
+    const parts = [];
+    appendBotviewChildren(body, parts);
+    let text = parts.join('');
+    text = text.replace(/[ \t]+/g, ' ');
+    text = text.replace(/ *\n */g, '\n');
+    text = text.replace(/\n{3,}/g, '\n\n');
     return text.trim();
+}
+
+
+function appendBotviewChildren(parent, parts) {
+    for (const child of parent.childNodes || []) {
+        appendBotviewNode(child, parts);
+    }
+}
+
+
+function appendBotviewNode(node, parts) {
+    if (node.nodeName === '#text') {
+        parts.push(node.value || '');
+        return;
+    }
+    if (node.nodeName === '#comment') {
+        return;
+    }
+    if (node.nodeName === '#document' || node.nodeName === '#document-fragment') {
+        appendBotviewChildren(node, parts);
+        return;
+    }
+    if (node.namespaceURI === SVG_NS) {
+        return;
+    }
+    const tag = node.nodeName;
+    if (BV_SKIP_TAGS.has(tag)) {
+        return;
+    }
+    if (tag === 'br') {
+        parts.push('\n');
+        return;
+    }
+    if (tag === 'img') {
+        const alt = getAttr(node, 'alt');
+        if (alt) {
+            parts.push('<img alt="' + alt + '" />');
+        }
+        return;
+    }
+    if (BV_BLOCK_TAGS.has(tag)) {
+        parts.push('\n\n');
+        if (tag !== 'p') {
+            parts.push('<' + tag + '>');
+        }
+        appendBotviewChildren(node, parts);
+        if (tag !== 'p') {
+            parts.push('</' + tag + '>');
+        }
+        parts.push('\n\n');
+        return;
+    }
+    if (BV_INLINE_TAGS.has(tag)) {
+        parts.push('<' + tag + '>');
+        appendBotviewChildren(node, parts);
+        parts.push('</' + tag + '>');
+        return;
+    }
+    appendBotviewChildren(node, parts);
 }
 
 
 export function parseSnapshot(html) {
     const doc = parse5(html);
     return {
-        title: extractTitle(html),
-        meta_description: extractMetaDescription(html),
+        title: extractTitle(html, doc),
+        meta_description: extractMetaDescription(html, doc),
         plaintext: extractPlaintext(html, doc),
         headlines_json: JSON.stringify(extractHeadlines(html, doc)),
         classes_ids_json: JSON.stringify(extractClassesAndIds(html, doc)),
-        botview: extractBotview(html),
+        botview: extractBotview(html, doc),
     };
-}
-
-
-function stripTags(str) {
-    return str.replace(RE_ALL_TAGS, ' ');
-}
-
-
-function decodeHtmlEntities(str) {
-    return decodeHTML(str);
 }

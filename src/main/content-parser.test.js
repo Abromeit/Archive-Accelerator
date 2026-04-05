@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-    getHead,
-    getBody,
     extractTitle,
     extractMetaDescription,
     extractPlaintext,
@@ -100,6 +98,10 @@ const TITLE_IN_BODY = `<html><head>` +
     `<title>Body Title</title>` +
     `<p>Content</p></body></html>`;
 
+const META_ONLY_IN_BODY = `<html><head><title>Has Title</title></head><body>` +
+    `<meta name="description" content="Description only in body">` +
+    `<p>Content</p></body></html>`;
+
 const HEADLINES_NESTED = `<html><head></head><body>` +
     `<h1><a href="/">Home <span>Page</span></a></h1>` +
     `<h2>About <em>Us</em></h2>` +
@@ -115,85 +117,6 @@ const SELF_CLOSING_META = `<html><head>` +
     `<meta name="description" content="Self closing" />` +
     `<title>Self Closing</title>` +
     `</head><body></body></html>`;
-
-
-// ---------------------------------------------------------------------------
-// getHead
-// ---------------------------------------------------------------------------
-
-describe('getHead', function () {
-    it('returns content before <body>', function () {
-        const head = getHead(MINIMAL_PAGE);
-        expect(head).toContain('<title>Hello World</title>');
-        expect(head).not.toContain('<p>Content here</p>');
-    });
-
-    it('returns full string when no <body> tag exists', function () {
-        expect(getHead(NO_BODY_TAG)).toBe(NO_BODY_TAG);
-    });
-
-    it('handles empty input', function () {
-        expect(getHead('')).toBe('');
-    });
-
-    it('returns full string for a fragment with no <body> tag', function () {
-        expect(getHead('<p>Fragment only</p>')).toBe('<p>Fragment only</p>');
-    });
-
-    it('returns content before <body> when only <body> wrapper is present', function () {
-        expect(getHead('<body><p>Hi</p></body>')).toBe('');
-    });
-});
-
-
-// ---------------------------------------------------------------------------
-// getBody
-// ---------------------------------------------------------------------------
-
-describe('getBody', function () {
-    it('returns content between <body> and </body>', function () {
-        const body = getBody(MINIMAL_PAGE);
-        expect(body).toContain('<p>Content here</p>');
-        expect(body).not.toContain('<title>');
-    });
-
-    it('returns content after <body> when no </body> exists', function () {
-        const html = '<html><head></head><body><p>Open body';
-        const body = getBody(html);
-        expect(body).toContain('<p>Open body');
-    });
-
-    it('returns full string when no <body> tag exists', function () {
-        expect(getBody(NO_BODY_TAG)).toBe(NO_BODY_TAG);
-    });
-
-    it('handles empty input', function () {
-        expect(getBody('')).toBe('');
-    });
-
-    it('handles body tag with attributes', function () {
-        const html = '<html><head></head><body class="dark" data-theme="night"><p>Hi</p></body></html>';
-        expect(getBody(html)).toBe('<p>Hi</p>');
-    });
-
-    it('returns inner markup when <body> exists without <html> wrapper', function () {
-        expect(getBody('<body><p>In body only</p></body>')).toBe('<p>In body only</p>');
-    });
-
-    it('returns full document when <html> has no <body> (HTML5 body-optional)', function () {
-        const html = '<html><head><title>Head title</title></head><p>Direct under html</p></html>';
-        expect(getBody(html)).toBe(html);
-    });
-
-    it('returns a fragment unchanged when there is no <body> tag', function () {
-        expect(getBody('<p>Fragment only</p>')).toBe('<p>Fragment only</p>');
-    });
-
-    it('returns content after <!DOCTYPE> when <body> is missing', function () {
-        const html = '<!DOCTYPE html><p>After doctype</p>';
-        expect(getBody(html)).toBe(html);
-    });
-});
 
 
 // ---------------------------------------------------------------------------
@@ -221,13 +144,19 @@ describe('extractTitle', function () {
         expect(extractTitle(EMPTY_HTML)).toBe('');
     });
 
-    it('strips tags inside title element', function () {
+    it('preserves literal angle brackets inside title (raw text per HTML5 spec)', function () {
         const html = '<html><head><title>Bold <b>Title</b></title></head><body></body></html>';
-        expect(extractTitle(html)).toBe('Bold Title');
+        expect(extractTitle(html)).toBe('Bold <b>Title</b>');
     });
 
     it('only extracts title from head, not body', function () {
         expect(extractTitle(TITLE_IN_BODY)).toBe('');
+    });
+
+    it('uses head title when body also contains a title element', function () {
+        const html = '<html><head><title>From Head</title></head><body>' +
+            '<title>From Body</title><p>x</p></body></html>';
+        expect(extractTitle(html)).toBe('From Head');
     });
 
     it('extracts title from head when <html> has no <body> tag', function () {
@@ -291,6 +220,10 @@ describe('extractMetaDescription', function () {
 
     it('only extracts from head, not body', function () {
         expect(extractMetaDescription(META_IN_BODY)).toBe('Head description');
+    });
+
+    it('returns empty string when description meta exists only in body', function () {
+        expect(extractMetaDescription(META_ONLY_IN_BODY)).toBe('');
     });
 });
 
@@ -436,6 +369,19 @@ describe('extractHeadlines', function () {
             '<h3>Sub</h3></body></html>';
         expect(extractHeadlines(broken)).toEqual(extractHeadlines(clean));
     });
+
+    it('handles unclosed h2 before block element (HTML5: following block nests inside h2)', function () {
+        const html = '<html><head></head><body><h2>Hello<p>Para</p></body></html>';
+        expect(extractHeadlines(html)).toEqual([{ level: 2, text: 'HelloPara' }]);
+    });
+
+    it('handles unclosed h2 before h3 (parser closes h2 when h3 starts)', function () {
+        const html = '<html><head></head><body><h2>Unclosed<h3>Sub</h3></body></html>';
+        expect(extractHeadlines(html)).toEqual([
+            { level: 2, text: 'Unclosed' },
+            { level: 3, text: 'Sub' },
+        ]);
+    });
 });
 
 
@@ -510,6 +456,11 @@ describe('extractBotview', function () {
             const html = `<html><head></head><body><h${i}>Heading</h${i}></body></html>`;
             expect(extractBotview(html)).toBe(`<h${i}>Heading</h${i}>`);
         }
+    });
+
+    it('handles unclosed h2 before p (parse5 nests p inside h2)', function () {
+        const html = '<html><head></head><body><h2>Hello<p>Para</p></body></html>';
+        expect(extractBotview(html)).toBe('<h2>Hello\n\nPara\n\n</h2>');
     });
 
     it('preserves a tags, strips href', function () {
@@ -740,9 +691,9 @@ describe('extractBotview', function () {
         expect(extractBotview('<html><body><p>Has body</p></body></html>')).toBe('Has body');
     });
 
-    it('includes stripped head text when <html> has no <body> (full string is processed)', function () {
+    it('excludes head title text when <body> is implicit', function () {
         const html = '<html><head><title>Head title</title></head><p>Direct under html</p></html>';
-        expect(extractBotview(html)).toBe('Head title\n\nDirect under html');
+        expect(extractBotview(html)).toBe('Direct under html');
     });
 
     it('handles <!DOCTYPE html> without <html> or <body>', function () {
@@ -837,5 +788,19 @@ describe('parseSnapshot', function () {
         expect(result.title).toBe('SEO Agentur KOCH ESSEN \u2022 Full-Service und SEO Beratung');
         expect(result.meta_description).toContain('Zuverlässige SEO-Agentur in Essen');
         expect(result.meta_description).toContain('Jetzt Anfragen!');
+    });
+
+    it('ignores title and meta description in body; keeps head values and parses broken headings', function () {
+        const html = '<html><head><title>Real Title</title>' +
+            '<meta name="description" content="Real desc"></head><body>' +
+            '<title>Fake Title</title><meta name="description" content="Fake desc">' +
+            '<h2>Unclosed<h3>Sub</h3></body></html>';
+        const result = parseSnapshot(html);
+        expect(result.title).toBe('Real Title');
+        expect(result.meta_description).toBe('Real desc');
+        expect(JSON.parse(result.headlines_json)).toEqual([
+            { level: 2, text: 'Unclosed' },
+            { level: 3, text: 'Sub' },
+        ]);
     });
 });
