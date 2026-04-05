@@ -89,6 +89,11 @@ export class UrlInput extends LitElement {
 
     _handleSyncClick() {
         if (this.syncing) return;
+        const input = this.querySelector('input[type="text"]');
+        const val = input ? input.value.trim() : '';
+        if (val && val !== this.value) {
+            this._submit(val);
+        }
         this.dispatchEvent(new CustomEvent('sync-requested', {
             bubbles: true,
             composed: true,

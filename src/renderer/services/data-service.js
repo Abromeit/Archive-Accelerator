@@ -19,6 +19,7 @@ export async function getPageInfo(url) {
 
 
 let _syncProgressCallback = null;
+let _syncLogCallback = null;
 
 export function initSyncProgressListener() {
     if (window.api?.onSyncProgress) {
@@ -28,16 +29,30 @@ export function initSyncProgressListener() {
             }
         });
     }
+    if (window.api?.onSyncLog) {
+        window.api.onSyncLog(function (data) {
+            if (_syncLogCallback) {
+                _syncLogCallback(data);
+            }
+        });
+    }
 }
 
 
-export async function syncUrl(url, onProgress) {
+export async function syncUrl(url, onProgress, onLog) {
     _syncProgressCallback = onProgress;
+    _syncLogCallback = onLog || null;
     try {
         return await window.api.syncUrl(url);
     } finally {
         _syncProgressCallback = null;
+        _syncLogCallback = null;
     }
+}
+
+
+export async function getSyncLogs(url) {
+    return await window.api.getSyncLogs(url);
 }
 
 

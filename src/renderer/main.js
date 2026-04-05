@@ -15,3 +15,4 @@ import './components/analytics-chart.js';
 import './components/provider-connect.js';
 import './components/empty-state.js';
 import './components/sync-button.js';
+import './components/sync-log-viewer.js';

@@ -94,6 +94,21 @@ function migrate() {
         );
     `);
 
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS sync_logs (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            url        TEXT    NOT NULL,
+            session_id TEXT    NOT NULL,
+            timestamp  INTEGER NOT NULL,
+            level      TEXT    NOT NULL DEFAULT 'info',
+            phase      TEXT,
+            message    TEXT    NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sync_logs_url_session
+            ON sync_logs(url, session_id);
+    `);
+
     try {
         db.exec('ALTER TABLE snapshots ADD COLUMN botview TEXT');
     } catch (_e) {
@@ -114,6 +129,31 @@ export function insertSnapshot(row) {
         VALUES (@url, @date, @source, @digest, @html_compressed, @plaintext, @title, @meta_description, @headlines_json, @classes_ids_json, @botview)
     `);
     return stmt.run(row);
+}
+
+
+export function upsertSnapshot(row) {
+    const existing = getDb().prepare(
+        'SELECT id FROM snapshots WHERE url = ? AND date = ? AND source = ?'
+    ).get(row.url, row.date, row.source);
+
+    if (existing) {
+        getDb().prepare(`
+            UPDATE snapshots
+            SET digest            = @digest,
+                html_compressed   = @html_compressed,
+                plaintext         = @plaintext,
+                title             = @title,
+                meta_description  = @meta_description,
+                headlines_json    = @headlines_json,
+                classes_ids_json  = @classes_ids_json,
+                botview           = @botview
+            WHERE id = @id
+        `).run({ ...row, id: existing.id });
+        return { changes: 1, lastInsertRowid: existing.id };
+    }
+
+    return insertSnapshot(row);
 }
 
 
@@ -301,6 +341,7 @@ export function deleteSnapshotsForUrl(url) {
         getDb().prepare('DELETE FROM snapshots WHERE url = ?').run(url);
         getDb().prepare('DELETE FROM analytics_data WHERE url = ?').run(url);
         getDb().prepare('DELETE FROM analytics_fetch_meta WHERE url = ?').run(url);
+        getDb().prepare('DELETE FROM sync_logs WHERE url = ?').run(url);
     });
     tx();
 }
@@ -327,6 +368,24 @@ export function getPageInfo(url) {
 
     if (!row || row.documentCount === 0) return null;
     return { url, documentCount: row.documentCount, firstDate: row.firstDate, lastDate: row.lastDate };
+}
+
+
+export function insertSyncLog(row) {
+    getDb().prepare(`
+        INSERT INTO sync_logs (url, session_id, timestamp, level, phase, message)
+        VALUES (@url, @session_id, @timestamp, @level, @phase, @message)
+    `).run(row);
+}
+
+
+export function getSyncLogs(url) {
+    return getDb().prepare(`
+        SELECT id, url, session_id, timestamp, level, phase, message
+        FROM sync_logs
+        WHERE url = ?
+        ORDER BY id ASC
+    `).all(url);
 }
 
 

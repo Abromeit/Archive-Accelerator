@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import { join } from 'node:path';
 import { config } from 'dotenv';
 import { buildMenu } from './menu.js';
-import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getSnapshotBotview, getPageInfo, getAllUrls, getAnalyticsData, getAllProviders, disconnectProvider, getSetting, setSetting, deleteSnapshotsForUrl } from './db.js';
+import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getSnapshotBotview, getPageInfo, getAllUrls, getAnalyticsData, getAllProviders, disconnectProvider, getSetting, setSetting, deleteSnapshotsForUrl, getSyncLogs } from './db.js';
 import { decompressToString } from './compression.js';
 import { syncUrl } from './archive-sync.js';
 import { syncAnalytics } from './gsc-api.js';
@@ -124,12 +124,25 @@ ipcMain.handle('get-page-info', function (_event, url) {
 
 
 ipcMain.handle('sync-url', async function (_event, url) {
-    await syncUrl(url, function (progress) {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('sync-progress', progress);
+    await syncUrl(
+        url,
+        function (progress) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('sync-progress', progress);
+            }
+        },
+        function (logEntry) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('sync-log', logEntry);
+            }
         }
-    });
+    );
     return { success: true };
+});
+
+
+ipcMain.handle('get-sync-logs', function (_event, url) {
+    return getSyncLogs(url);
 });
 
 

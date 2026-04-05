@@ -144,13 +144,25 @@ export class AppShell extends LitElement {
         this._syncing = true;
         this._syncProgress = { current: 0, total: 0, done: false };
 
-        await dataService.syncUrl(this.currentUrl, (p) => {
-            this._syncProgress = { ...p };
-        });
+        this.activeTab = 4;
 
-        this._syncing = false;
-        this._syncProgress = null;
-        this._loadData(this.currentUrl);
+        try {
+            await dataService.syncUrl(
+                this.currentUrl,
+                (p) => { this._syncProgress = { ...p }; },
+                (logEntry) => {
+                    const viewer = this.querySelector('sync-log-viewer');
+                    if (viewer) viewer.addLogEntry(logEntry);
+                }
+            );
+        } catch (_err) {
+            // Errors are already logged to the sync log via onLog
+        } finally {
+            this._syncing = false;
+            this._syncProgress = null;
+        }
+
+        await this._loadData(this.currentUrl);
     }
 
     render() {
@@ -176,10 +188,11 @@ export class AppShell extends LitElement {
                         @sync-requested=${this._handleSyncRequested}
                     ></url-input>
 
-                    ${this.hasData
+                    ${this.hasData || this._syncing || this.activeTab === 4
                         ? html`
                             <tab-navigation
                                 .activeTab=${this.activeTab}
+                                .syncing=${this._syncing}
                                 @tab-changed=${this._handleTabChanged}
                             ></tab-navigation>
 
@@ -224,6 +237,14 @@ export class AppShell extends LitElement {
                         .currentUrl=${this.currentUrl}
                         .snapshots=${this.snapshots}
                     ></analytics-chart>
+                `;
+            case 4:
+                return html`
+                    <sync-log-viewer
+                        .currentUrl=${this.currentUrl}
+                        .syncing=${this._syncing}
+                        .progress=${this._syncProgress}
+                    ></sync-log-viewer>
                 `;
             default:
                 return html``;

@@ -79,4 +79,14 @@ contextBridge.exposeInMainWorld('api', {
         return ipcRenderer.invoke('open-external', url);
     },
 
+    onSyncLog: function (callback) {
+        ipcRenderer.on('sync-log', function (_event, data) {
+            callback(data);
+        });
+    },
+
+    getSyncLogs: function (url) {
+        return ipcRenderer.invoke('get-sync-logs', url);
+    },
+
 });

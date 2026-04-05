@@ -1,10 +1,11 @@
 import { LitElement, html } from 'lit';
 
-const TABS = ['Web Page', 'Text-Diff', 'Meta', 'Charts'];
+const TABS = ['Web Page', 'Text-Diff', 'Meta', 'Charts', 'Sync Log'];
 
 export class TabNavigation extends LitElement {
     static properties = {
         activeTab: { type: Number },
+        syncing: { type: Boolean },
     };
 
     createRenderRoot() {
@@ -14,6 +15,7 @@ export class TabNavigation extends LitElement {
     constructor() {
         super();
         this.activeTab = 0;
+        this.syncing = false;
     }
 
     _handleTabClick(index) {
@@ -49,7 +51,7 @@ export class TabNavigation extends LitElement {
                         tabindex="${i === this.activeTab ? 0 : -1}"
                         aria-selected="${i === this.activeTab}"
                         class="px-4 py-2.5 text-sm font-medium transition-colors duration-150
-                               cursor-pointer relative
+                               cursor-pointer relative flex items-center gap-1.5
                                ${i === this.activeTab
                                    ? 'text-accent-green'
                                    : 'text-text-muted hover:text-text-secondary'
@@ -57,6 +59,10 @@ export class TabNavigation extends LitElement {
                         @click=${() => this._handleTabClick(i)}
                     >
                         ${label}
+                        ${i === 4 && this.syncing
+                            ? html`<span class="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse"></span>`
+                            : html``
+                        }
                         ${i === this.activeTab
                             ? html`<div class="absolute bottom-0 left-2 right-2 h-0.5 bg-accent-green rounded-full"></div>`
                             : html``

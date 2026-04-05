@@ -3,10 +3,12 @@ import { parseSnapshot } from './content-parser.js';
 import { computeAllDiffs } from './diff-engine.js';
 import {
     insertSnapshot,
+    upsertSnapshot,
     insertSnapshotDiff,
     getExistingDatesForUrl,
     getSnapshotsByUrl,
     getDb,
+    insertSyncLog,
 } from './db.js';
 import { fetchLiveSnapshot } from './live-snapshot.js';
 
@@ -18,14 +20,38 @@ const INITIAL_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 60_000;
 
 
-export async function syncUrl(url, onProgress) {
+export async function syncUrl(url, onProgress, onLog) {
+    const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    function log(level, phase, message) {
+        const entry = { url, session_id: sessionId, timestamp: Date.now(), level, phase, message };
+        try { insertSyncLog(entry); } catch (_e) { /* DB write must never break sync */ }
+        if (onLog) {
+            try { onLog(entry); } catch (_e) { /* callback must never break sync */ }
+        }
+    }
+
     const progress = { url, current: 0, total: 0, done: false, phase: 'discovering' };
     onProgress(progress);
 
-    const [cdxEntries, boundaryEntries] = await Promise.all([
-        fetchCdxEntries(url),
-        fetchBoundaryEntries(url),
-    ]);
+    log('info', 'discovering', `Starting sync for ${url}`);
+    log('info', 'discovering', 'Querying Wayback Machine CDX index…');
+
+    let cdxEntries, boundaryEntries;
+    try {
+        [cdxEntries, boundaryEntries] = await Promise.all([
+            fetchCdxEntries(url),
+            fetchBoundaryEntries(url),
+        ]);
+    } catch (err) {
+        log('error', 'discovering', `CDX query failed: ${err.message}`);
+        throw err;
+    }
+
+    const totalCandidates = cdxEntries.length + boundaryEntries.length;
+    log('success', 'discovering',
+        `Found ${cdxEntries.length} unique digests + ${boundaryEntries.length} boundary snapshots`
+    );
 
     const existingDates = new Set(getExistingDatesForUrl(url, 'wayback'));
     const seen = new Set();
@@ -39,24 +65,41 @@ export async function syncUrl(url, onProgress) {
         return true;
     });
 
+    const skipped = totalCandidates - toDownload.length;
+    if (existingDates.size > 0) {
+        log('info', 'discovering',
+            `${existingDates.size} dates already in database — ${toDownload.length} new to download`
+        );
+    } else if (skipped > 0) {
+        log('info', 'discovering',
+            `${toDownload.length} unique dates to download (${skipped} duplicate dates merged)`
+        );
+    }
+
     progress.total = toDownload.length + 1;
     progress.phase = 'downloading';
     onProgress(progress);
 
+    log('info', 'downloading', `Downloading ${toDownload.length} snapshots + 1 live…`);
+
     const livePromise = downloadLiveSnapshot(url);
 
-    await downloadPool(toDownload, url, function () {
+    await downloadPool(toDownload, url, log, function () {
         ++progress.current;
         onProgress({ ...progress });
     });
 
     try {
+        log('info', 'downloading', 'Fetching live snapshot…');
         const liveHtml = await livePromise;
         if (liveHtml) {
-            storeSnapshot(url, todayDate(), 'live', null, liveHtml);
+            storeSnapshot(url, todayDate(), 'live', null, liveHtml, { upsert: true });
+            log('success', 'downloading', 'Live snapshot stored');
+        } else {
+            log('warn', 'downloading', 'Live snapshot returned empty');
         }
     } catch (err) {
-        console.error('Live snapshot failed:', err.message);
+        log('error', 'downloading', `Live snapshot failed: ${err.message}`);
     }
 
     ++progress.current;
@@ -64,10 +107,14 @@ export async function syncUrl(url, onProgress) {
     progress.phase = 'processing';
     onProgress(progress);
 
+    log('info', 'processing', 'Computing diffs between snapshots…');
     computeDiffsForUrl(url);
+    log('success', 'processing', 'Diff computation complete');
 
     progress.phase = 'complete';
     onProgress(progress);
+
+    log('success', 'complete', `Sync finished — ${toDownload.length} new snapshots stored`);
 }
 
 
@@ -139,17 +186,19 @@ async function fetchBoundaryEntries(url) {
 }
 
 
-async function downloadPool(entries, url, onEach) {
+async function downloadPool(entries, url, log, onEach) {
     let idx = 0;
 
     async function worker() {
         while (idx < entries.length) {
             const entry = entries[idx++];
+            const date = timestampToDate(entry.timestamp);
             try {
                 const html = await downloadWaybackPage(url, entry.timestamp);
-                storeSnapshot(url, timestampToDate(entry.timestamp), 'wayback', entry.digest, html);
+                storeSnapshot(url, date, 'wayback', entry.digest, html);
+                log('success', 'downloading', `${date} — stored (${formatBytes(html.length)})`);
             } catch (err) {
-                console.error(`Failed to download ${entry.timestamp} after ${MAX_RETRIES} retries:`, err.message);
+                log('error', 'downloading', `${date} — failed after ${MAX_RETRIES} retries: ${err.message}`);
             }
             onEach();
         }
@@ -170,11 +219,11 @@ async function downloadWaybackPage(url, timestamp) {
 }
 
 
-function storeSnapshot(url, date, source, digest, html) {
+function storeSnapshot(url, date, source, digest, html, { upsert = false } = {}) {
     const parsed = parseSnapshot(html);
     const htmlCompressed = compress(html);
 
-    insertSnapshot({
+    const row = {
         url,
         date,
         source,
@@ -186,7 +235,13 @@ function storeSnapshot(url, date, source, digest, html) {
         headlines_json: parsed.headlines_json,
         classes_ids_json: parsed.classes_ids_json,
         botview: parsed.botview,
-    });
+    };
+
+    if (upsert) {
+        upsertSnapshot(row);
+    } else {
+        insertSnapshot(row);
+    }
 }
 
 
@@ -261,6 +316,13 @@ function todayDate() {
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
+}
+
+
+function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
 
