@@ -48,6 +48,7 @@ export class SerpPreview extends LitElement {
         comparisonSnapshot: { type: Object },
         liveSnapshot: { type: Object },
         mode: { type: String },
+        _titleTooltip: { state: true },
     };
 
     createRenderRoot() {
@@ -60,6 +61,56 @@ export class SerpPreview extends LitElement {
         this.comparisonSnapshot = null;
         this.liveSnapshot = null;
         this.mode = 'previous';
+        this._titleTooltip = null;
+    }
+
+    connectedCallback() {
+        super.connectedCallback();
+        this._closeTitleTooltipOnScroll = function () {
+            if (this._titleTooltip) {
+                this._titleTooltip = null;
+                this.requestUpdate();
+            }
+        }.bind(this);
+        window.addEventListener('scroll', this._closeTitleTooltipOnScroll, true);
+    }
+
+    disconnectedCallback() {
+        window.removeEventListener('scroll', this._closeTitleTooltipOnScroll, true);
+        super.disconnectedCallback();
+    }
+
+    _makeTitleEnterHandler(fullTitle) {
+        const self = this;
+        return function (e) {
+            self._handleTitleEnter(e, fullTitle);
+        };
+    }
+
+    _handleTitleEnter(e, fullTitle) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const margin = 12;
+        const maxW = Math.min(420, Math.max(120, window.innerWidth - 2 * margin));
+        let left = rect.left;
+        if (left + maxW > window.innerWidth - margin) {
+            left = Math.max(margin, window.innerWidth - margin - maxW);
+        }
+        if (left < margin) {
+            left = margin;
+        }
+        const gapPx = 4;
+        this._titleTooltip = {
+            text: fullTitle,
+            left,
+            bottom: window.innerHeight - rect.top + gapPx,
+            maxWidth: maxW,
+        };
+        this.requestUpdate();
+    }
+
+    _handleTitleLeave() {
+        this._titleTooltip = null;
+        this.requestUpdate();
     }
 
     _getComparisonSnap() {
@@ -113,7 +164,9 @@ export class SerpPreview extends LitElement {
             `;
         }
 
-        const title = truncate(snap.title, 60);
+        const fullTitle = snap.title || '';
+        const title = truncate(fullTitle, 60);
+        const showTitleTip = fullTitle.length > 60;
         const description = truncate(snap.metaDescription, 155);
         const breadcrumb = urlToBreadcrumb(snap.url);
         const siteName = extractSiteName(snap.url);
@@ -156,12 +209,28 @@ export class SerpPreview extends LitElement {
                         </div>
                     </div>
 
-                    <div style="font-family: 'Google Sans', Arial, sans-serif; font-size: 20px;
-                                color: rgb(153, 195, 255); line-height: 26px;
-                                margin-bottom: 4px; white-space: nowrap; overflow: hidden;
-                                text-overflow: ellipsis;"
-                         title="${snap.title || ''}"
-                    >${title}</div>
+                    ${showTitleTip
+                        ? html`
+                            <div
+                                style="display: block; width: 100%; cursor: default;"
+                                @mouseenter=${this._makeTitleEnterHandler(fullTitle)}
+                                @mouseleave=${this._handleTitleLeave}
+                            >
+                                <div style="font-family: 'Google Sans', Arial, sans-serif; font-size: 20px;
+                                            color: rgb(153, 195, 255); line-height: 26px;
+                                            margin-bottom: 4px; white-space: nowrap; overflow: hidden;
+                                            text-overflow: ellipsis;"
+                                >${title}</div>
+                            </div>
+                        `
+                        : html`
+                            <div style="font-family: 'Google Sans', Arial, sans-serif; font-size: 20px;
+                                        color: rgb(153, 195, 255); line-height: 26px;
+                                        margin-bottom: 4px; white-space: nowrap; overflow: hidden;
+                                        text-overflow: ellipsis;"
+                            >${title}</div>
+                        `
+                    }
 
                     <div style="font-family: Arial, sans-serif; font-size: 14px; color: rgb(191, 191, 191);
                                 line-height: 22px;">
@@ -186,6 +255,47 @@ export class SerpPreview extends LitElement {
 
         return html`
             <div class="h-full flex flex-col">
+                ${this._titleTooltip
+                    ? html`
+                        <div
+                            style="position: fixed; z-index: 10000; left: ${this._titleTooltip.left}px;
+                                   bottom: ${this._titleTooltip.bottom}px; max-width: ${this._titleTooltip.maxWidth}px;
+                                   pointer-events: none; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));"
+                        >
+                            <div
+                                style="display: inline-block; max-width: ${this._titleTooltip.maxWidth}px;
+                                       vertical-align: top;"
+                            >
+                                <div
+                                    style="padding: 8px 10px; background: #303030; border: 1px solid #505050;
+                                           border-radius: 6px; font-family: Arial, sans-serif; font-size: 13px;
+                                           font-weight: normal; line-height: 1.45; color: #e8eaed;
+                                           white-space: normal; word-break: break-word;"
+                                >${this._titleTooltip.text}</div>
+                                <div style="text-align: center; line-height: 0; margin-top: -1px;">
+                                    <div
+                                        style="display: inline-block; width: 0; height: 0;
+                                               border-left: 10px solid transparent;
+                                               border-right: 10px solid transparent;
+                                               border-top: 11px solid #505050;"
+                                    ></div>
+                                </div>
+                                <div
+                                    style="text-align: center; line-height: 0; margin-top: -12px;
+                                           margin-bottom: 0;"
+                                >
+                                    <div
+                                        style="display: inline-block; width: 0; height: 0;
+                                               border-left: 9px solid transparent;
+                                               border-right: 9px solid transparent;
+                                               border-top: 10px solid #303030;"
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+                    `
+                    : ''
+                }
                 <div class="flex items-center gap-2 mb-4">
                     <span class="text-xs text-text-muted mr-2">Compare:</span>
                     <button

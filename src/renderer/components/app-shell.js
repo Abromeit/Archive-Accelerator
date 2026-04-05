@@ -80,7 +80,26 @@ export class AppShell extends LitElement {
 
         const filtered = this._getFilteredSnapshots();
         const idx = filtered.findIndex((s) => s.id === this.selectedSnapshot.id);
-        this.comparisonSnapshot = idx >= 0 && idx < filtered.length - 1 ? filtered[idx + 1] : null;
+        const fullIdx = this.snapshots.findIndex((s) => s.id === this.selectedSnapshot.id);
+
+        if (idx < 0 || fullIdx < 0) {
+            this.comparisonSnapshot = null;
+            return;
+        }
+
+        if (idx < filtered.length - 1) {
+            this.comparisonSnapshot = filtered[idx + 1];
+            return;
+        }
+
+        // Last row in the current filter: compare to the chronologically older snapshot
+        // (full list), not only the next matching row — otherwise SERP/diff show no peer.
+        if (fullIdx < this.snapshots.length - 1) {
+            this.comparisonSnapshot = this.snapshots[fullIdx + 1];
+            return;
+        }
+
+        this.comparisonSnapshot = null;
     }
 
     _getFilteredSnapshots() {
