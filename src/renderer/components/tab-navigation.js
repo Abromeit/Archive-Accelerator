@@ -1,6 +1,6 @@
 import { LitElement, html } from 'lit';
 
-const TABS = ['Web Page', 'Text', 'Text-Diff', 'Meta', 'Charts'];
+const TABS = ['Web Page', 'Text-Diff', 'Meta', 'Charts'];
 
 export class TabNavigation extends LitElement {
     static properties = {

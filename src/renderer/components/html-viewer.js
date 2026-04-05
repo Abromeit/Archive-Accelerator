@@ -2,14 +2,27 @@ import { LitElement, html } from 'lit';
 import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import hljs from 'highlight.js/lib/core';
 import htmlLang from 'highlight.js/lib/languages/xml';
-import { getSnapshotContent } from '../services/data-service.js';
+import { getSnapshotContent, getSnapshotBotview } from '../services/data-service.js';
 
 hljs.registerLanguage('html', htmlLang);
+
+const RE_BV_STRONG = /(&lt;strong&gt;[\s\S]*?&lt;\/strong&gt;)/gi;
+const RE_BV_EM = /(&lt;em&gt;[\s\S]*?&lt;\/em&gt;)/gi;
+const RE_BV_IMG = /(&lt;img[\s\S]*?\/&gt;)/gi;
+const RE_BV_LI = /(&lt;\/?li&gt;)/gi;
+const RE_BV_A = /(&lt;a&gt;[\s\S]*?&lt;\/a&gt;)/gi;
+const RE_BV_H1 = /(&lt;h1&gt;[\s\S]*?&lt;\/h1&gt;)/gi;
+
+const RE_BV_H = [];
+for (let i = 6; i >= 2; --i) {
+    RE_BV_H.push(new RegExp(`(&lt;h${i}&gt;[\\s\\S]*?&lt;\\/h${i}&gt;)`, 'gi'));
+}
 
 export class HtmlViewer extends LitElement {
     static properties = {
         snapshot: { type: Object },
         _htmlContent: { state: true },
+        _botviewContent: { state: true },
         _loading: { state: true },
         _viewMode: { state: true },
         _wrapLines: { state: true },
@@ -26,9 +39,10 @@ export class HtmlViewer extends LitElement {
         super();
         this.snapshot = null;
         this._htmlContent = null;
+        this._botviewContent = null;
         this._loading = false;
         this._loadedId = null;
-        this._viewMode = 'browser';
+        this._viewMode = 'text';
         this._wrapLines = false;
         this._searchQuery = '';
         this._matchCount = 0;
@@ -39,7 +53,10 @@ export class HtmlViewer extends LitElement {
         if (changed.has('snapshot')) {
             this._loadContent();
         }
-        if (changed.has('_viewMode') || changed.has('_searchQuery') || changed.has('_htmlContent')) {
+        if (
+            changed.has('_viewMode') || changed.has('_searchQuery')
+            || changed.has('_htmlContent') || changed.has('_botviewContent')
+        ) {
             this._applySearchAfterRender();
         }
     }
@@ -49,15 +66,20 @@ export class HtmlViewer extends LitElement {
 
         this._loading = true;
         this._htmlContent = null;
+        this._botviewContent = null;
         this._loadedId = this.snapshot.id;
 
         try {
-            const content = await getSnapshotContent(this.snapshot.id);
+            const [htmlContent, botviewContent] = await Promise.all([
+                getSnapshotContent(this.snapshot.id),
+                getSnapshotBotview(this.snapshot.id),
+            ]);
             if (this._loadedId === this.snapshot.id) {
-                this._htmlContent = content;
+                this._htmlContent = htmlContent;
+                this._botviewContent = botviewContent;
             }
         } catch (err) {
-            console.error('Failed to load snapshot HTML:', err);
+            console.error('Failed to load snapshot content:', err);
         } finally {
             this._loading = false;
         }
@@ -83,8 +105,10 @@ export class HtmlViewer extends LitElement {
 
         if (this._viewMode === 'browser') {
             this._highlightInIframe(query);
-        } else {
+        } else if (this._viewMode === 'html') {
             this._highlightInSource(query);
+        } else {
+            this._highlightInText(query);
         }
     }
 
@@ -109,6 +133,12 @@ export class HtmlViewer extends LitElement {
 
     _highlightInSource(query) {
         const pre = this.querySelector('.hljs-source-view');
+        if (!pre) return;
+        this._markTextNodes(pre, query);
+    }
+
+    _highlightInText(query) {
+        const pre = this.querySelector('.botview-text-pre');
         if (!pre) return;
         this._markTextNodes(pre, query);
     }
@@ -179,8 +209,10 @@ export class HtmlViewer extends LitElement {
         if (!root) {
             if (this._viewMode === 'browser') {
                 root = this._getIframeDoc()?.body;
-            } else {
+            } else if (this._viewMode === 'html') {
                 root = this.querySelector('.hljs-source-view');
+            } else {
+                root = this.querySelector('.botview-text-pre');
             }
         }
         if (!root) return;
@@ -317,6 +349,14 @@ export class HtmlViewer extends LitElement {
                                    }"
                             @click=${() => { this._viewMode = 'html'; }}
                         >HTML</button>
+                        <button
+                            class="px-3 py-1 text-xs rounded-md transition-colors cursor-pointer
+                                   ${this._viewMode === 'text'
+                                       ? 'bg-accent-green/20 text-accent-green'
+                                       : 'bg-surface-2 text-text-muted hover:text-text-secondary'
+                                   }"
+                            @click=${() => { this._viewMode = 'text'; }}
+                        >Text</button>
 
                         ${this._viewMode === 'html'
                             ? html`
@@ -336,7 +376,56 @@ export class HtmlViewer extends LitElement {
                     </div>
                 </div>
 
-                ${this._viewMode === 'browser' ? this._renderBrowser() : this._renderSource()}
+                ${this._renderContent()}
+            </div>
+        `;
+    }
+
+    _renderContent() {
+        if (this._viewMode === 'browser') return this._renderBrowser();
+        if (this._viewMode === 'html') return this._renderSource();
+        return this._renderText();
+    }
+
+    _getHighlightedBotviewHtml() {
+        if (!this._botviewContent) return '';
+
+        let t = this._botviewContent
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+
+        t = t.replace(RE_BV_STRONG, '<span class="bv-strong">$1</span>');
+        t = t.replace(RE_BV_EM, '<span class="bv-em">$1</span>');
+        t = t.replace(RE_BV_IMG, '<span class="bv-img">$1</span>');
+        t = t.replace(RE_BV_LI, '<span class="bv-li">$1</span>');
+        t = t.replace(RE_BV_A, '<span class="bv-a">$1</span>');
+
+        for (let i = 0, i_max = RE_BV_H.length; i < i_max; ++i) {
+            t = t.replace(RE_BV_H[i], '<span class="bv-h">$1</span>');
+        }
+        t = t.replace(RE_BV_H1, '<span class="bv-h1">$1</span>');
+
+        return t;
+    }
+
+    _renderText() {
+        return html`
+            <style>
+                .bv-strong { color: #e5e5e5; }
+                .bv-em { color: #e5e5e5; }
+                .bv-img { color: #c084fc; }
+                .bv-li { color: #a0a0a0; }
+                .bv-a { color: #60a5fa; background: rgba(96, 165, 250, .08); }
+                .bv-h { color: #46b478; background: rgba(70, 180, 120, .06); }
+                .bv-h1 { color: #46b478; background: rgba(70, 180, 120, .06); font-weight: 700; }
+            </style>
+            <div class="flex-1 overflow-auto rounded-lg border border-surface-3 bg-surface-1">
+                <pre class="botview-text-pre p-4 text-[13px] font-mono leading-relaxed m-0
+                            text-text-muted select-text"
+                     style="white-space: pre-wrap; word-break: break-word;"
+                >${unsafeHTML(this._getHighlightedBotviewHtml())}</pre>
             </div>
         `;
     }
