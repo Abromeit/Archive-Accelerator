@@ -219,6 +219,7 @@ function findCategoryIndexForDate(dateStr, dates, granularity) {
 
 /**
  * Pixel rectangle covering category indices [idxFrom, idxTo] inclusive over the grid plot area.
+ * Edges align with category centers (where dashed mark lines sit).
  */
 function getUncertaintyBandPixelRect(coordSys, idxFrom, idxTo, categoryCount) {
     const area = getGridArea(coordSys);
@@ -227,25 +228,20 @@ function getUncertaintyBandPixelRect(coordSys, idxFrom, idxTo, categoryCount) {
     }
     const yTop = area.y;
     const h = area.height;
-    const p0 = coordSys.dataToPoint([idxFrom, 0]);
-    const p1 = coordSys.dataToPoint([idxTo, 0]);
-    let bandW = 0;
-    if (idxFrom + 1 < categoryCount) {
-        const pNext = coordSys.dataToPoint([idxFrom + 1, 0]);
-        bandW = Math.abs(pNext[0] - p0[0]);
-    } else if (idxFrom > 0) {
-        const pPrev = coordSys.dataToPoint([idxFrom - 1, 0]);
-        bandW = Math.abs(p0[0] - pPrev[0]);
-    } else {
-        bandW = 8;
+    const x0 = coordSys.dataToPoint([idxFrom, 0])[0];
+    const x1 = coordSys.dataToPoint([idxTo, 0])[0];
+    let xLeft = Math.min(x0, x1);
+    let xRight = Math.max(x0, x1);
+    const MIN_WIDTH = 6;
+    if (xRight - xLeft < MIN_WIDTH) {
+        const mid = (xLeft + xRight) / 2;
+        xLeft = mid - MIN_WIDTH / 2;
+        xRight = mid + MIN_WIDTH / 2;
     }
-    const half = bandW / 2;
-    const xLeft = Math.min(p0[0], p1[0]) - half;
-    const xRight = Math.max(p0[0], p1[0]) + half;
     return {
         x: xLeft,
         y: yTop,
-        width: Math.max(0, xRight - xLeft),
+        width: xRight - xLeft,
         height: h,
     };
 }
