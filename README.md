@@ -20,6 +20,14 @@ npm run dev
 npm run dist
 ```
 
+## Screenshots
+
+![Screenshot 1](docs/1.png)
+![Screenshot 2](docs/2.png)
+![Screenshot 3](docs/3.png)
+![Screenshot 4](docs/4.png)
+![Screenshot 5](docs/5.png)
+
 ## Copyright
 
 Copyright (c) 2026 Daniel Abromeit (https://daniel-abromeit.de/)
