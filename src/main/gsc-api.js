@@ -1,4 +1,4 @@
-import { getValidAccessToken } from './gsc-auth.js';
+import { getValidAccessToken, fetchAvailableProperties } from './gsc-auth.js';
 import {
     getProvider,
     insertAnalyticsData,
@@ -12,11 +12,16 @@ const SEARCH_ANALYTICS_BASE = 'https://searchconsole.googleapis.com/webmasters/v
 
 export async function syncAnalytics(url) {
     const provider = getProvider('gsc');
-    if (!provider || !provider.connected || !provider.property) {
-        throw new Error('GSC not connected or no property selected');
+    if (!provider || !provider.connected) {
+        throw new Error('GSC not connected');
     }
 
-    if (!shouldRefreshAnalyticsFromApi(url, 'gsc', provider.property)) {
+    const property = await resolvePropertyForUrl(url);
+    if (!property) {
+        throw new Error('No matching GSC property found for this URL');
+    }
+
+    if (!shouldRefreshAnalyticsFromApi(url, 'gsc', property)) {
         return getAnalyticsDataFromDb(url, 'gsc');
     }
 
@@ -25,7 +30,7 @@ export async function syncAnalytics(url) {
     const endDate = todayDate();
     const startDate = monthsAgo(18);
 
-    const rows = await fetchSearchAnalytics(provider.property, url, startDate, endDate, accessToken);
+    const rows = await fetchSearchAnalytics(property, url, startDate, endDate, accessToken);
 
     if (rows.length > 0) {
         const dbRows = rows.map(function (row) {
@@ -39,10 +44,47 @@ export async function syncAnalytics(url) {
             };
         });
         insertAnalyticsData(dbRows);
-        recordSuccessfulAnalyticsFetch(url, 'gsc', provider.property);
+        recordSuccessfulAnalyticsFetch(url, 'gsc', property);
     }
 
     return getAnalyticsDataFromDb(url, 'gsc');
+}
+
+
+async function resolvePropertyForUrl(url) {
+    const properties = await fetchAvailableProperties();
+
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(url);
+    } catch {
+        return null;
+    }
+
+    let bestMatch = null;
+    let bestLength = 0;
+
+    for (let i = 0, iMax = properties.length; i < iMax; ++i) {
+        const siteUrl = properties[i].siteUrl;
+
+        if (siteUrl.startsWith('sc-domain:')) {
+            const domain = siteUrl.slice('sc-domain:'.length);
+            if (parsedUrl.hostname === domain || parsedUrl.hostname.endsWith('.' + domain)) {
+                if (bestMatch === null || siteUrl.length > bestLength) {
+                    bestMatch = siteUrl;
+                    bestLength = siteUrl.length;
+                }
+            }
+            continue;
+        }
+
+        if (url.startsWith(siteUrl) && siteUrl.length > bestLength) {
+            bestMatch = siteUrl;
+            bestLength = siteUrl.length;
+        }
+    }
+
+    return bestMatch;
 }
 
 

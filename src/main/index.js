@@ -6,7 +6,7 @@ import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getSnapshotBotview, get
 import { decompressToString } from './compression.js';
 import { syncUrl } from './archive-sync.js';
 import { syncAnalytics } from './gsc-api.js';
-import { startOAuthFlow, loadCredentials, fetchAvailableProperties, selectProperty } from './gsc-auth.js';
+import { startOAuthFlow, loadCredentials } from './gsc-auth.js';
 import { computeAllDiffs } from './diff-engine.js';
 
 let mainWindow = null;
@@ -28,7 +28,7 @@ function createWindow() {
         },
     });
 
-    buildMenu(mainWindow);
+    buildMenu();
 
     if (isDev && process.env['ELECTRON_RENDERER_URL']) {
         mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']);
@@ -170,17 +170,6 @@ ipcMain.handle('connect-provider', async function (_event, providerId) {
 
 ipcMain.handle('disconnect-provider', function (_event, providerId) {
     disconnectProvider(providerId);
-    return { success: true };
-});
-
-
-ipcMain.handle('get-available-properties', async function () {
-    return await fetchAvailableProperties();
-});
-
-
-ipcMain.handle('select-property', function (_event, siteUrl) {
-    selectProperty(siteUrl);
     return { success: true };
 });
 

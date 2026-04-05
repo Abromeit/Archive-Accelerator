@@ -55,14 +55,6 @@ contextBridge.exposeInMainWorld('api', {
         return ipcRenderer.invoke('disconnect-provider', id);
     },
 
-    getAvailableProperties: function () {
-        return ipcRenderer.invoke('get-available-properties');
-    },
-
-    selectProperty: function (siteUrl) {
-        return ipcRenderer.invoke('select-property', siteUrl);
-    },
-
     getChartPreferences: function () {
         return ipcRenderer.invoke('get-chart-preferences');
     },
@@ -87,9 +79,4 @@ contextBridge.exposeInMainWorld('api', {
         return ipcRenderer.invoke('open-external', url);
     },
 
-    onProviderAction: function (callback) {
-        ipcRenderer.on('provider-action', function (_event, data) {
-            callback(data);
-        });
-    },
 });

@@ -1,9 +1,47 @@
 import { Menu, app, shell, dialog } from 'electron';
-import { startOAuthFlow, fetchAvailableProperties, selectProperty, hasCredentials } from './gsc-auth.js';
+import { startOAuthFlow, hasCredentials } from './gsc-auth.js';
 import { disconnectProvider, getProvider } from './db.js';
 
-export function buildMenu(mainWindow) {
+export function buildMenu() {
     const isMac = process.platform === 'darwin';
+    const gsc = getProvider('gsc');
+    const gscConnected = Boolean(gsc && gsc.connected);
+
+    const gscSubmenu = gscConnected
+        ? [
+            {
+                label: `Connected to ${gsc.email || 'Google Account'}`,
+                enabled: false,
+            },
+            { type: 'separator' },
+            {
+                label: 'Disconnect',
+                click: function () {
+                    disconnectProvider('gsc');
+                    buildMenu();
+                },
+            },
+        ]
+        : [
+            {
+                label: 'Connect...',
+                click: async function () {
+                    if (!hasCredentials()) {
+                        dialog.showErrorBox(
+                            'Missing Credentials',
+                            'GSC_CLIENT_ID and GSC_CLIENT_SECRET must be set in .env file.'
+                        );
+                        return;
+                    }
+                    try {
+                        await startOAuthFlow();
+                        buildMenu();
+                    } catch (err) {
+                        dialog.showErrorBox('Connection Failed', err.message);
+                    }
+                },
+            },
+        ];
 
     const template = [
         ...(isMac
@@ -59,64 +97,7 @@ export function buildMenu(mainWindow) {
             submenu: [
                 {
                     label: 'Google Search Console',
-                    submenu: [
-                        {
-                            label: 'Connect...',
-                            click: async function () {
-                                if (!hasCredentials()) {
-                                    dialog.showErrorBox(
-                                        'Missing Credentials',
-                                        'GSC_CLIENT_ID and GSC_CLIENT_SECRET must be set in .env file.'
-                                    );
-                                    return;
-                                }
-                                try {
-                                    const result = await startOAuthFlow();
-                                    mainWindow.webContents.send('provider-action', {
-                                        provider: 'gsc',
-                                        action: 'connected',
-                                        properties: result.properties.map(function (p) { return p.siteUrl; }),
-                                        selectedProperty: result.selectedProperty,
-                                    });
-                                } catch (err) {
-                                    dialog.showErrorBox('Connection Failed', err.message);
-                                }
-                            },
-                        },
-                        {
-                            label: 'Disconnect',
-                            click: function () {
-                                disconnectProvider('gsc');
-                                mainWindow.webContents.send('provider-action', {
-                                    provider: 'gsc',
-                                    action: 'disconnected',
-                                });
-                            },
-                        },
-                        { type: 'separator' },
-                        {
-                            label: 'Switch Property...',
-                            click: async function () {
-                                const provider = getProvider('gsc');
-                                if (!provider || !provider.connected) {
-                                    dialog.showErrorBox('Not Connected', 'Please connect GSC first.');
-                                    return;
-                                }
-                                try {
-                                    const properties = await fetchAvailableProperties();
-                                    const siteUrls = properties.map(function (p) { return p.siteUrl; });
-                                    mainWindow.webContents.send('provider-action', {
-                                        provider: 'gsc',
-                                        action: 'switch-property',
-                                        properties: siteUrls,
-                                        currentProperty: provider.property,
-                                    });
-                                } catch (err) {
-                                    dialog.showErrorBox('Error', err.message);
-                                }
-                            },
-                        },
-                    ],
+                    submenu: gscSubmenu,
                 },
             ],
         },

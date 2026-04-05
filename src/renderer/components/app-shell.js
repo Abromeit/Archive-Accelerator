@@ -36,16 +36,6 @@ export class AppShell extends LitElement {
     connectedCallback() {
         super.connectedCallback();
         this._loadData(this.currentUrl);
-
-        if (window.api?.onProviderAction) {
-            window.api.onProviderAction((data) => {
-                this.dispatchEvent(new CustomEvent('provider-action', {
-                    detail: data,
-                    bubbles: true,
-                    composed: true,
-                }));
-            });
-        }
     }
 
     async _loadData(url) {

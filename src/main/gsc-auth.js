@@ -5,8 +5,9 @@ import { upsertProvider, getProvider } from './db.js';
 
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
-const SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
+const SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly email';
 const SITES_ENDPOINT = 'https://www.googleapis.com/webmasters/v3/sites';
+const USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v2/userinfo';
 
 let clientId = '';
 let clientSecret = '';
@@ -31,7 +32,10 @@ export async function startOAuthFlow() {
 
     const tokens = await exchangeCodeForTokens(code, redirectUri);
 
-    const properties = await fetchProperties(tokens.access_token);
+    const [properties, userInfo] = await Promise.all([
+        fetchProperties(tokens.access_token),
+        fetchUserInfo(tokens.access_token),
+    ]);
 
     const selectedProperty = properties.length > 0 ? properties[0].siteUrl : null;
 
@@ -43,9 +47,10 @@ export async function startOAuthFlow() {
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token || null,
         token_expiry: Date.now() + (tokens.expires_in * 1000),
+        email: userInfo.email || null,
     });
 
-    return { properties, selectedProperty };
+    return { properties, selectedProperty, email: userInfo.email || null };
 }
 
 
@@ -80,13 +85,6 @@ export async function fetchAvailableProperties() {
     return await fetchProperties(token);
 }
 
-
-export function selectProperty(siteUrl) {
-    const provider = getProvider('gsc');
-    if (!provider) return;
-
-    upsertProvider({ ...provider, property: siteUrl });
-}
 
 
 function openBrowserAndWaitForCode() {
@@ -212,4 +210,17 @@ async function fetchProperties(accessToken) {
 
     const data = await response.json();
     return data.siteEntry || [];
+}
+
+
+async function fetchUserInfo(accessToken) {
+    const response = await fetch(USERINFO_ENDPOINT, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+        return {};
+    }
+
+    return await response.json();
 }

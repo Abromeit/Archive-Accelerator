@@ -99,6 +99,12 @@ function migrate() {
     } catch (_e) {
         // Column already exists
     }
+
+    try {
+        db.exec('ALTER TABLE providers ADD COLUMN email TEXT');
+    } catch (_e) {
+        // Column already exists
+    }
 }
 
 
@@ -247,15 +253,16 @@ export function getProvider(id) {
 
 export function upsertProvider(row) {
     getDb().prepare(`
-        INSERT INTO providers (id, name, connected, property, access_token, refresh_token, token_expiry)
-        VALUES (@id, @name, @connected, @property, @access_token, @refresh_token, @token_expiry)
+        INSERT INTO providers (id, name, connected, property, access_token, refresh_token, token_expiry, email)
+        VALUES (@id, @name, @connected, @property, @access_token, @refresh_token, @token_expiry, @email)
         ON CONFLICT(id) DO UPDATE SET
             name = @name,
             connected = @connected,
             property = @property,
             access_token = @access_token,
             refresh_token = @refresh_token,
-            token_expiry = @token_expiry
+            token_expiry = @token_expiry,
+            email = @email
     `).run(row);
 }
 
@@ -269,7 +276,7 @@ export function disconnectProvider(id) {
 
 
 export function getAllProviders() {
-    return getDb().prepare('SELECT id, name, connected, property FROM providers').all();
+    return getDb().prepare('SELECT id, name, connected, property, email FROM providers').all();
 }
 
 
