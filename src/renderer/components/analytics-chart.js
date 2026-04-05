@@ -2,12 +2,6 @@ import { LitElement, html } from 'lit';
 import * as echarts from 'echarts';
 import * as dataService from '../services/data-service.js';
 
-const MONTH_SHORT = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-];
-
-
 /**
  * GSC-style metric hues at ~Tailwind *-400 luminance (same band as icon green #34d399 / emerald-400)
  * so lines read clearly on dark UI without heavy saturation.
@@ -72,30 +66,56 @@ function getMonthKeyFromCategory(cat, granularity) {
 
 
 /**
- * Axis tick at the start of each calendar month: "1 Jan 2024".
+ * First x-axis tick: real category date (series start), YYYY-MM-DD.
  */
-/**
- * First tick in each calendar month uses the real category date (e.g. "21 Nov 2024"), not "1 Nov 2024".
- */
-function formatCategoryAxisLabel(cat, granularity) {
+function formatAxisLabelSeriesStart(cat, granularity) {
     if (granularity === 'monthly') {
         const parts = String(cat).split('-');
         if (parts.length >= 2) {
             const y = parts[0];
-            const mi = parseInt(parts[1], 10) - 1;
-            if (mi >= 0 && mi <= 11) {
-                return `${MONTH_SHORT[mi]} ${y}`;
-            }
+            const m = String(parseInt(parts[1], 10)).padStart(2, '0');
+            return `${y}-${m}-01`;
         }
         return String(cat);
     }
     const parts = String(cat).split('-');
-    if (parts.length < 3) {
+    if (parts.length >= 3) {
+        return formatYmd(parseYmd(cat));
+    }
+    if (parts.length === 2) {
+        const y = parts[0];
+        const m = String(parseInt(parts[1], 10)).padStart(2, '0');
+        return `${y}-${m}-01`;
+    }
+    return String(cat);
+}
+
+
+/**
+ * Later month-boundary ticks: calendar first of that month (not the first day present in the data).
+ */
+function formatAxisLabelMonthStart(cat, granularity) {
+    if (granularity === 'monthly') {
+        const parts = String(cat).split('-');
+        if (parts.length >= 2) {
+            const y = parts[0];
+            const m = String(parseInt(parts[1], 10)).padStart(2, '0');
+            return `${y}-${m}-01`;
+        }
         return String(cat);
     }
-    const d = parseYmd(cat);
-    const day = d.getDate();
-    return `${day} ${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+    const parts = String(cat).split('-');
+    if (parts.length >= 3) {
+        const d = parseYmd(cat);
+        d.setDate(1);
+        return formatYmd(d);
+    }
+    if (parts.length === 2) {
+        const y = parts[0];
+        const m = String(parseInt(parts[1], 10)).padStart(2, '0');
+        return `${y}-${m}-01`;
+    }
+    return String(cat);
 }
 
 
@@ -112,7 +132,10 @@ function monthBoundaryAxisLabelFormatter(dates, granularity) {
                 return '';
             }
         }
-        return formatCategoryAxisLabel(dates[idx], granularity);
+        if (idx === 0) {
+            return formatAxisLabelSeriesStart(dates[idx], granularity);
+        }
+        return formatAxisLabelMonthStart(dates[idx], granularity);
     };
 }
 
