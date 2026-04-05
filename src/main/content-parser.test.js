@@ -460,7 +460,7 @@ describe('extractBotview', function () {
 
     it('handles unclosed h2 before p (parse5 nests p inside h2)', function () {
         const html = '<html><head></head><body><h2>Hello<p>Para</p></body></html>';
-        expect(extractBotview(html)).toBe('<h2>Hello\n\nPara\n\n</h2>');
+        expect(extractBotview(html)).toBe('<h2>Hello\n\nPara</h2>');
     });
 
     it('preserves a tags, strips href', function () {

@@ -258,21 +258,24 @@ function appendBotviewNode(node, parts) {
         return;
     }
     if (BV_BLOCK_TAGS.has(tag)) {
+        const innerParts = [];
+        appendBotviewChildren(node, innerParts);
+        const inner = innerParts.join('')
+            .replace(/[ \t]+/g, ' ')
+            .replace(/ *\n */g, '\n')
+            .trim();
         parts.push('\n\n');
-        if (tag !== 'p') {
-            parts.push('<' + tag + '>');
-        }
-        appendBotviewChildren(node, parts);
-        if (tag !== 'p') {
-            parts.push('</' + tag + '>');
+        if (inner) {
+            parts.push(tag !== 'p' ? '<' + tag + '>' + inner + '</' + tag + '>' : inner);
         }
         parts.push('\n\n');
         return;
     }
     if (BV_INLINE_TAGS.has(tag)) {
-        parts.push('<' + tag + '>');
-        appendBotviewChildren(node, parts);
-        parts.push('</' + tag + '>');
+        const innerParts = [];
+        appendBotviewChildren(node, innerParts);
+        const inner = innerParts.join('').replace(/\s+/g, ' ').trim();
+        parts.push('<' + tag + '>' + inner + '</' + tag + '>');
         return;
     }
     appendBotviewChildren(node, parts);
