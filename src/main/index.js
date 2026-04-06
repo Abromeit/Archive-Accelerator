@@ -1,6 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import { join } from 'node:path';
-import { config } from 'dotenv';
 import { buildMenu } from './menu.js';
 import { initDb, getSnapshotsWithDiffs, getSnapshotHtml, getSnapshotBotview, getPageInfo, getAllUrls, getAnalyticsData, getAllProviders, disconnectProvider, getSetting, setSetting, deleteSnapshotsForUrl, getSyncLogs } from './db.js';
 import { decompressToString } from './compression.js';
@@ -41,7 +40,6 @@ function createWindow() {
 
 
 app.whenReady().then(function () {
-    config();
     initDb();
     loadCredentials();
 
